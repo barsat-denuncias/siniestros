@@ -6,18 +6,23 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 
-// Filtro de teclado para DNI, Tel y CP (permite letras para "NO INFORMA")
-function aplicarFiltroInput(id) {
+// Validación estricta: Solo numeros o la frase exacta "NO INFORMA"
+function aplicarValidacionEstricta(id) {
     const input = document.getElementById(id);
     input.addEventListener('input', () => {
         let val = input.value.toUpperCase();
-        if (val.includes("NO INFORMA")) {
-            input.value = val.slice(0, 10);
-            return;
-        }
-        // Si no está escribiendo NO INFORMA, solo deja números
-        if (!"NO INFORMA".startsWith(val)) {
+        // Si el usuario esta intentando escribir "NO INFORMA", lo dejamos
+        if ("NO INFORMA".startsWith(val)) return;
+        // Si no, forzamos a que sean solo numeros
+        if (val !== "NO INFORMA") {
             input.value = val.replace(/[^0-9]/g, '');
+        }
+    });
+    // Al perder el foco, si no es numero ni "NO INFORMA", se limpia
+    input.addEventListener('blur', () => {
+        let val = input.value.toUpperCase();
+        if (val !== "NO INFORMA" && isNaN(val.replace(/ /g,''))) {
+            input.value = "";
         }
     });
 }
@@ -27,8 +32,8 @@ window.onload = function() {
     document.getElementById('fecha_hecho').setAttribute('max', hoy);
     emailjs.init(EMAILJS_PUBLIC_KEY);
     
-    // Aplicar filtros a campos que lo requieren
-    ['dni_chofer', 'tel_chofer', 'prop_dni', 'prop_tel', 'cp'].forEach(aplicarFiltroInput);
+    // Blindar campos
+    ['dni_chofer', 'tel_chofer', 'prop_dni', 'prop_tel', 'cp'].forEach(aplicarValidacionEstricta);
 
     document.getElementById('es_propietario').addEventListener('change', function() {
         document.getElementById('datos_propietario').classList.toggle('hidden', this.value === 'SI');
@@ -128,14 +133,14 @@ async function enviarSiniestro() {
         document.getElementById('p-relato').innerText = val('descripcion');
         document.getElementById('p-lista-fotos').innerHTML = links.map(l => `<p>${l}</p>`).join('');
 
-        await new Promise(r => setTimeout(r, 1000)); // Esperar renderizado
+        await new Promise(r => setTimeout(r, 1200)); // Mas tiempo para asegurar renderizado de 3 hojas
         const pdfBlob = await html2pdf().set({ 
             margin: 0, 
             html2canvas: { scale: 2, useCORS: true },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         }).from(document.getElementById('pdf-template')).output('blob');
 
-        const pdfPath = `${folder}/Denuncia_Oficial.pdf`;
+        const pdfPath = `${folder}/Denuncia_Final.pdf`;
         await fetch(`${URL_API}/storage/v1/object/denuncias/${pdfPath}`, {
             method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/pdf' }, body: pdfBlob
         });
@@ -147,7 +152,7 @@ async function enviarSiniestro() {
         });
 
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
-        alert("Denuncia enviada. Verificando el PDF de 3 hojas...");
+        alert("Denuncia enviada. Verificando PDF de 3 hojas...");
         location.reload();
     } catch (e) { alert("Error: " + e.message); btn.disabled = false; }
 }
