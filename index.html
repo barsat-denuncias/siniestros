@@ -12,61 +12,79 @@
     <div class="card">
         <div id="pantalla-validacion">
             <h2>Carga de Siniestros</h2>
-            <p>Validación de unidad</p>
             <form id="form-validacion">
                 <input type="text" id="patente" placeholder="Dominio del Vehículo*" required maxlength="7">
                 <input type="text" id="chasis" placeholder="Últimos 5 del Chasis*" required maxlength="5">
-                <button type="submit">Validar Vehículo</button>
+                <button type="submit">Validar Unidad</button>
             </form>
             <p id="mensaje-error" class="error"></p>
         </div>
 
         <div id="pantalla-formulario" class="hidden">
-            <h2 id="titulo-paso">Paso 1: Conductor</h2>
-            <p style="font-size: 11px; color: red; text-align: left;">* Campos obligatorios</p>
-            <div class="progress-bar"><div id="progress" style="width: 20%;"></div></div>
+            <h2 id="titulo-paso">Paso 1: Hecho</h2>
+            <p style="font-size: 11px; color: #888; text-align: left;">(* = Requerido o 'NO INFORMA')</p>
+            <div class="progress-bar"><div id="progress" style="width: 16%;"></div></div>
 
             <div class="step" id="step-1">
-                <input type="text" id="nombre_chofer" placeholder="Apellido y Nombre Conductor*" required>
-                <input type="text" id="dni_chofer" placeholder="DNI (8 números)*" required maxlength="8" pattern="\d{8}">
-                <input type="text" id="tel_chofer" placeholder="Teléfono de contacto*" required maxlength="15">
-                <button onclick="validarYPasar(2)">Siguiente</button>
-            </div>
-
-            <div class="step hidden" id="step-2">
                 <label>Fecha y Hora del hecho*</label>
                 <div style="display: flex; gap: 10px;">
                     <input type="date" id="fecha_hecho" required>
                     <input type="time" id="hora_hecho" required>
                 </div>
-                <input type="text" id="calle" placeholder="Calle / Ruta / Km*" required maxlength="80">
-                <input type="text" id="localidad" placeholder="Localidad*" required maxlength="50">
-                <input type="text" id="provincia" placeholder="Provincia*" required maxlength="50">
+                <input type="text" id="provincia" placeholder="Provincia*" required>
+                <input type="text" id="localidad" placeholder="Localidad*" required>
+                <input type="text" id="cp" placeholder="Código Postal (CP)*" required maxlength="5">
+                <input type="text" id="calle" placeholder="Calle / Ruta / Km / Intersección*" required maxlength="80">
+                <button onclick="validarYPasar(2)">Siguiente</button>
+            </div>
+
+            <div class="step hidden" id="step-2">
+                <input type="text" id="nombre_chofer" placeholder="Apellido y Nombre Conductor*" required>
+                <input type="text" id="dni_chofer" placeholder="DNI Conductor (8 números)*" required maxlength="8" pattern="\d{8}">
+                <input type="text" id="tel_chofer" placeholder="Teléfono del conductor*" required maxlength="15">
+                <input type="text" id="provincia_chofer" placeholder="Provincia Domicilio Conductor*" required>
+                <input type="text" id="localidad_chofer" placeholder="Localidad Domicilio Conductor*" required>
+                <input type="text" id="calle_chofer" placeholder="Domicilio Conductor*" required>
                 <button onclick="validarYPasar(3)">Siguiente</button>
                 <button class="btn-secundario" onclick="cambiarPaso(1)">Volver</button>
             </div>
 
             <div class="step hidden" id="step-3">
-                <input type="text" id="marca_vehiculo" placeholder="Marca y Modelo del Camión*" required>
+                <textarea id="danos_propios" placeholder="Daños en NUESTRO vehículo (ej: paragolpe der)*" required></textarea>
                 <textarea id="descripcion" placeholder="RELATO DEL HECHO: ¿Cómo fue?*" required></textarea>
-                <textarea id="danos_propios" placeholder="Daños en NUESTRO vehículo*" required></textarea>
                 <button onclick="validarYPasar(4)">Siguiente</button>
                 <button class="btn-secundario" onclick="cambiarPaso(2)">Volver</button>
             </div>
 
             <div class="step hidden" id="step-4">
-                <h3>Datos del Tercero (Si hay)</h3>
-                <input type="text" id="patente_tercero" placeholder="Dominio Tercero">
-                <input type="text" id="seguro_tercero" placeholder="Compañía de Seguros">
+                <h3>Detalles del Tercero (Otro Vehículo)</h3>
+                <input type="text" id="patente_tercero" placeholder="Dominio Tercero*">
+                <input type="text" id="marca_tercero" placeholder="Marca/Modelo Tercero">
+                <input type="text" id="seguro_tercero" placeholder="Compañía de Seguros*">
+                <input type="text" id="poliza_tercero" placeholder="Póliza Tercero*">
                 <textarea id="danos_tercero" placeholder="Daños observados en el tercero"></textarea>
-                <button onclick="cambiarPaso(5)">Siguiente</button>
+                
+                <label>¿El conductor es el propietario?*</label>
+                <select id="conductor_es_propietario">
+                    <option value="SI">SI</option>
+                    <option value="NO">NO</option>
+                </select>
+                <div id="datos_propietario_tercero" class="hidden">
+                    <h4>Datos Propietario Tercero</h4>
+                    <input type="text" id="nombre_propietario" placeholder="Nombre Propietario">
+                    <input type="text" id="dni_propietario" placeholder="Documento Propietario (CP)*">
+                    <input type="text" id="tel_propietario" placeholder="Teléfono Propietario*">
+                </div>
+                
+                <button onclick="validarYPasar(5)">Siguiente</button>
                 <button class="btn-secundario" onclick="cambiarPaso(3)">Volver</button>
             </div>
 
             <div class="step hidden" id="step-5">
                 <h3>Paso 5: Fotos del hecho*</h3>
-                <label>Adjuntar o sacar fotos (Daños, documentos):</label>
+                <label>Adjuntar fotos (Daños, documentos, patentes):</label>
                 <input type="file" id="input-fotos" accept="image/*" multiple required>
+                <p style="font-size: 11px; color: #666;">Podés seleccionar varias fotos juntas.</p>
                 <button id="btn-finalizar" onclick="enviarSiniestro()">Cargar Denuncia</button>
                 <button class="btn-secundario" onclick="cambiarPaso(4)">Volver</button>
             </div>
@@ -74,67 +92,109 @@
     </div>
 
     <div style="position: absolute; left: -10000px; top: 0;">
-        <div id="pdf-template" style="width: 800px; padding: 40px; font-family: Arial, sans-serif; font-size: 11px; color: black; background: white;">
-            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 5px;">
-                <h2 style="margin: 0; font-size: 18px; font-weight: bold;">DENUNCIA DE SINIESTRO</h2>
-                <div style="border: 1px solid #000; padding: 5px 20px; font-weight: bold;">ANEXO I</div>
-            </div>
-            <div style="background: #999; color: black; font-weight: bold; padding: 5px; margin-top: 5px; border: 1px solid #000;">AUTOMOTORES</div>
+        <div id="pdf-template" style="width: 800px; padding: 40px; font-family: Arial, sans-serif; font-size: 10px; color: black; background: white;">
             
-            <table style="width: 100%; margin-top: 10px; border-collapse: collapse;">
-                <tr>
-                    <td>Aseguradora: <b>LA SEGUNDA / ALLIANZ</b></td>
-                    <td style="text-align: right;">ID Seguimiento: <b id="p-sini-id"></b></td>
-                </tr>
-            </table>
+            <div style="page-break-after: always; min-height: 1050px;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 5px;">
+                    <h2 style="margin: 0; font-size: 16px; font-weight: bold;">DENUNCIA DE SINIESTRO</h2>
+                    <div style="border: 1px solid #000; padding: 3px 15px; font-weight: bold;">ANEXO I - HOJA 1</div>
+                </div>
+                <div style="background: #999; color: black; font-weight: bold; padding: 3px; margin-top: 5px; border: 1px solid #000;">AUTOMOTORES</div>
+                <table style="width: 100%; margin-top: 5px; border-collapse: collapse;">
+                    <tr>
+                        <td>Aseguradora: <b>LA SEGUNDA / ALLIANZ</b></td>
+                        <td style="text-align: right;">ID Seguimiento: <b id="p-sini-id"></b></td>
+                    </tr>
+                </table>
 
-            <div style="border-top: 2px solid #000; margin-top: 15px; font-weight: bold; padding-top: 3px;">1 FECHA Y LUGAR DEL SINIESTRO</div>
-            <table style="width: 100%; border-collapse: collapse; margin-top: 5px; border: 1px solid #ccc;">
-                <tr>
-                    <td style="border: 1px solid #ccc; padding: 5px; width: 33%;">Fecha: <b id="p-fecha"></b></td>
-                    <td style="border: 1px solid #ccc; padding: 5px; width: 33%;">Hora: <b id="p-hora"></b></td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">Estado Tiempo: <b>BUENO</b></td>
-                </tr>
-                <tr>
-                    <td style="border: 1px solid #ccc; padding: 5px;">Localidad: <b id="p-localidad"></b></td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">Provincia: <b id="p-provincia"></b></td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">País: <b>ARGENTINA</b></td>
-                </tr>
-                <tr><td colspan="3" style="border: 1px solid #ccc; padding: 5px;">Ubicación: <b id="p-lugar"></b></td></tr>
-            </table>
+                <div style="border-top: 2px solid #000; margin-top: 10px; font-weight: bold; padding-top: 3px;">1 - FECHA Y LUGAR DEL SINIESTRO</div>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 3px; border: 1px solid #ccc;">
+                    <tr>
+                        <td style="border: 1px solid #ccc; padding: 3px; width: 33%;">Fecha: <b id="p-fecha"></b></td>
+                        <td style="border: 1px solid #ccc; padding: 3px; width: 33%;">Hora: <b id="p-hora"></b></td>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Estado Tiempo: <b>BUENO</b></td>
+                    </tr>
+                    <tr>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Localidad: <b id="p-localidad"></b> (CP: <b id="p-cp"></b>)</td>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Provincia: <b id="p-provincia"></b></td>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Calle: <b id="p-calle"></b></td>
+                    </tr>
+                </table>
 
-            <div style="border-top: 2px solid #000; margin-top: 15px; font-weight: bold; padding-top: 3px;">3 DATOS DEL CONDUCTOR</div>
-            <table style="width: 100%; border-collapse: collapse; margin-top: 5px; border: 1px solid #ccc;">
-                <tr>
-                    <td style="border: 1px solid #ccc; padding: 5px; width: 50%;">Nombre: <b id="p-c-nom"></b></td>
-                    <td style="border: 1px solid #ccc; padding: 5px; width: 25%;">DNI: <b id="p-c-dni"></b></td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">Tel: <b id="p-c-tel"></b></td>
-                </tr>
-            </table>
+                <div style="border-top: 2px solid #000; margin-top: 10px; font-weight: bold; padding-top: 3px;">3 - DATOS DEL CONDUCTOR</div>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 3px; border: 1px solid #ccc;">
+                    <tr>
+                        <td style="border: 1px solid #ccc; padding: 3px; width: 60%;">Nombre: <b id="p-c-nom"></b></td>
+                        <td style="border: 1px solid #ccc; padding: 3px;">DNI: <b id="p-c-dni"></b></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="border: 1px solid #ccc; padding: 3px;">Domicilio: <b id="p-c-dom"></b> | Tel: <b id="p-c-tel"></b></td>
+                    </tr>
+                </table>
 
-            <div style="border-top: 2px solid #000; margin-top: 15px; font-weight: bold; padding-top: 3px;">4 DATOS DEL ASEGURADO</div>
-            <table style="width: 100%; border-collapse: collapse; margin-top: 5px; border: 1px solid #ccc;">
-                <tr>
-                    <td style="border: 1px solid #ccc; padding: 5px;">Razón Social: <b>TENLOG S.A.</b></td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">CUIT: <b>30715701916</b></td>
-                </tr>
-                <tr><td colspan="2" style="border: 1px solid #ccc; padding: 5px;">Domicilio: <b>ALEM LEANDRO N. AVDA. 424 - CABA</b></td></tr>
-            </table>
+                <div style="border-top: 2px solid #000; margin-top: 10px; font-weight: bold; padding-top: 3px;">4 - DATOS DEL ASEGURADO (EMPRESA)</div>
+                <p>Razón Social: <b>TENLOG S.A.</b> | CUIT: <b>30715701916</b> | Domicilio: <b>ALEM 424, CABA</b></p>
 
-            <div style="border-top: 2px solid #000; margin-top: 15px; font-weight: bold; padding-top: 3px;">5 NUESTRO VEHÍCULO Y DAÑOS</div>
-            <table style="width: 100%; border-collapse: collapse; margin-top: 5px; border: 1px solid #ccc;">
-                <tr>
-                    <td style="border: 1px solid #ccc; padding: 5px;">Dominio: <b id="p-v-dom"></b></td>
-                    <td style="border: 1px solid #ccc; padding: 5px;">Marca/Modelo: <b id="p-v-mm"></b></td>
-                </tr>
-                <tr><td colspan="2" style="border: 1px solid #ccc; padding: 5px;">Daños: <b id="p-v-dan"></b></td></tr>
-            </table>
+                <div style="border-top: 2px solid #000; margin-top: 10px; font-weight: bold; padding-top: 3px;">5 - NUESTRO VEHÍCULO (AUTOMÁTICO SUPABASE)</div>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 3px; border: 1px solid #ccc;">
+                    <tr>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Dominio: <b id="p-v-dom"></b></td>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Marca/Modelo: <b id="p-v-mm"></b></td>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Póliza: <b id="p-v-pol"></b></td>
+                    </tr>
+                    <tr>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Nº Motor: <b id="p-v-mot"></b></td>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Nº Chasis: <b id="p-v-cha"></b></td>
+                    </tr>
+                </table>
+                <div style="margin-top: 5px;">
+                    <strong>Detalle de Daños NUESTRO Vehículo:</strong>
+                    <div id="p-v-dan" style="border: 1px solid #ccc; padding: 5px; min-height: 40px; margin-top: 2px;"></div>
+                </div>
+            </div>
 
-            <div style="border-top: 2px solid #000; margin-top: 15px; font-weight: bold; padding-top: 3px;">RELATO DEL HECHO</div>
-            <div id="p-relato" style="border: 1px solid #ccc; padding: 10px; min-height: 100px; white-space: pre-wrap;"></div>
+            <div style="page-break-after: always; min-height: 1050px;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 5px;">
+                    <h2 style="margin: 0; font-size: 16px; font-weight: bold;">DENUNCIA DE SINIESTRO</h2>
+                    <div style="border: 1px solid #000; padding: 3px 15px; font-weight: bold;">ANEXO I - HOJA 2</div>
+                </div>
+                <div style="background: #999; color: black; font-weight: bold; padding: 3px; margin-top: 5px; border: 1px solid #000;">DATOS DEL TERCERO</div>
+                
+                <table style="width: 100%; border-collapse: collapse; margin-top: 3px; border: 1px solid #ccc;">
+                    <tr>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Dominio Tercero: <b id="p-t-dom"></b></td>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Marca/Modelo: <b id="p-t-mm"></b></td>
+                    </tr>
+                    <tr>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Compañía Seguros: <b id="p-t-seg"></b></td>
+                        <td style="border: 1px solid #ccc; padding: 3px;">Póliza Nº: <b id="p-t-pol"></b></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="border: 1px solid #ccc; padding: 3px;">Propietario: <b id="p-t-p-nom"></b> | Documento: <b id="p-t-p-doc"></b> | Tel: <b id="p-t-p-tel"></b></td>
+                    </tr>
+                </table>
+                <div style="margin-top: 5px;">
+                    <strong>Daños observados en Tercero:</strong>
+                    <div id="p-t-dan" style="border: 1px solid #ccc; padding: 5px; min-height: 40px; margin-top: 2px;"></div>
+                </div>
 
-            <div style="border-top: 2px solid #000; margin-top: 15px; font-weight: bold; padding-top: 3px;">FOTOS ADJUNTAS (LINKS)</div>
-            <div id="p-lista-fotos" style="margin-top: 5px; font-size: 9px; color: #555;"></div>
+                <div style="border-top: 2px solid #000; margin-top: 15px; font-weight: bold; padding-top: 3px;">CROQUIS DEL SINIESTRO</div>
+                <div style="border: 1px solid #ccc; padding: 10px; height: 350px; margin-top: 5px; text-align: center; color: #999;">
+                    <br><br><br> (Espacio para Croquis/Diagrama)
+                </div>
+            </div>
+
+            <div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 5px;">
+                    <h2 style="margin: 0; font-size: 16px; font-weight: bold;">DENUNCIA DE SINIESTRO</h2>
+                    <div style="border: 1px solid #000; padding: 3px 15px; font-weight: bold;">ANEXO I - HOJA 3</div>
+                </div>
+                <div style="background: #999; color: black; font-weight: bold; padding: 3px; margin-top: 5px; border: 1px solid #000;">RELATO DEL HECHO</div>
+                <div id="p-relato" style="border: 1px solid #ccc; padding: 10px; min-height: 400px; white-space: pre-wrap; margin-top: 5px; line-height: 1.5;"></div>
+
+                <div style="border-top: 2px solid #000; margin-top: 15px; font-weight: bold; padding-top: 3px;">DOCUMENTACIÓN FOTOGRÁFICA (LINKS)</div>
+                <div id="p-lista-fotos" style="margin-top: 5px; font-size: 8px; color: #555;"></div>
+            </div>
         </div>
     </div>
 
