@@ -6,11 +6,30 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 
+// Filtro de teclado para DNI, Tel y CP (permite letras para "NO INFORMA")
+function aplicarFiltroInput(id) {
+    const input = document.getElementById(id);
+    input.addEventListener('input', () => {
+        let val = input.value.toUpperCase();
+        if (val.includes("NO INFORMA")) {
+            input.value = val.slice(0, 10);
+            return;
+        }
+        // Si no está escribiendo NO INFORMA, solo deja números
+        if (!"NO INFORMA".startsWith(val)) {
+            input.value = val.replace(/[^0-9]/g, '');
+        }
+    });
+}
+
 window.onload = function() {
     const hoy = new Date().toISOString().split('T')[0];
     document.getElementById('fecha_hecho').setAttribute('max', hoy);
     emailjs.init(EMAILJS_PUBLIC_KEY);
     
+    // Aplicar filtros a campos que lo requieren
+    ['dni_chofer', 'tel_chofer', 'prop_dni', 'prop_tel', 'cp'].forEach(aplicarFiltroInput);
+
     document.getElementById('es_propietario').addEventListener('change', function() {
         document.getElementById('datos_propietario').classList.toggle('hidden', this.value === 'SI');
     });
@@ -20,12 +39,10 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
     e.preventDefault();
     const patente = document.getElementById('patente').value.trim().toUpperCase();
     const chasis = document.getElementById('chasis_val').value.trim();
-    
     const res = await fetch(`${URL_API}/rest/v1/Camiones?DOMINIO=eq.${patente}&CHASIS=like.*${chasis}`, {
         headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
     });
     const datos = await res.json();
-    
     if (datos.length > 0) {
         unidad = datos[0]; 
         document.getElementById('pantalla-validacion').classList.add('hidden');
@@ -46,26 +63,10 @@ function cambiarPaso(paso) {
 function validarYPasar(proximoPaso) {
     const inputs = document.getElementById(`step-${proximoPaso - 1}`).querySelectorAll('[required]');
     let valido = true;
-
     inputs.forEach(i => {
-        // Validaciones personalizadas de error en vez de hints
-        if (i.id === "dni_chofer" || i.id === "prop_dni") {
-            if (i.value !== "NO INFORMA" && (i.value.length < 7 || isNaN(i.value))) {
-                alert("El DNI debe ser numérico de 7 u 8 cifras (o ponga NO INFORMA)");
-                valido = false;
-            }
-        }
-        if (i.id === "tel_chofer" || i.id === "prop_tel") {
-             if (i.value !== "NO INFORMA" && (i.value.length < 10 || isNaN(i.value))) {
-                alert("El Teléfono debe ser numérico de al menos 10 cifras");
-                valido = false;
-            }
-        }
-        
         if(!i.checkValidity()){ i.style.borderColor = "red"; valido = false; } 
         else { i.style.borderColor = "#ddd"; }
     });
-
     if(valido) cambiarPaso(proximoPaso);
 }
 
@@ -74,7 +75,7 @@ async function enviarSiniestro() {
     btn.innerText = "Procesando..."; btn.disabled = true;
     const ts = Date.now();
     const folder = `${unidad.DOMINIO}_${ts}`;
-    const val = (id) => document.getElementById(id).value.trim() || "NO INFORMA";
+    const val = (id) => document.getElementById(id).value.trim().toUpperCase() || "NO INFORMA";
 
     try {
         const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
@@ -92,7 +93,7 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF OFICIAL
+        // POBLAR PDF
         document.getElementById('p-sini-id').innerText = ts.toString().slice(-6);
         document.getElementById('p-fecha').innerText = val('fecha_hecho');
         document.getElementById('p-hora').innerText = val('hora_hecho');
@@ -102,61 +103,51 @@ async function enviarSiniestro() {
         document.getElementById('p-loc').innerText = val('localidad');
         document.getElementById('p-calle').innerText = val('calle');
         document.getElementById('p-int').innerText = val('interseccion');
-        
-        document.getElementById('p-c-nom').innerText = val('nombre_chofer').toUpperCase();
+        document.getElementById('p-c-nom').innerText = val('nombre_chofer');
         document.getElementById('p-c-dni').innerText = val('dni_chofer');
         document.getElementById('p-c-tel').innerText = val('tel_chofer');
         document.getElementById('p-c-dom').innerText = `${val('domicilio_chofer')}, ${val('loc_chofer')}, ${val('prov_chofer')}`;
-        
         document.getElementById('p-v-do').innerText = unidad.DOMINIO;
-        document.getElementById('p-v-ma').innerText = "MERCEDES BENZ"; // O unidad.MARCA si la agregaste
+        document.getElementById('p-v-ma').innerText = "MERCEDES BENZ";
         document.getElementById('p-v-mo').innerText = unidad.MODELO;
         document.getElementById('p-v-ti').innerText = unidad.VEHICULO;
         document.getElementById('p-v-cha').innerText = unidad.CHASIS;
-        document.getElementById('p-v-mot').innerText = "S/D";
-        document.getElementById('p-v-pol').innerText = "58814369"; // Poliza por defecto
-
         document.getElementById('p-v-dan').innerText = val('danos_propios');
-        document.getElementById('p-t-do').innerText = val('patente_tercero').toUpperCase();
-        document.getElementById('p-t-ma').innerText = val('marca_tercero').toUpperCase();
-        document.getElementById('p-t-se').innerText = val('seguro_tercero').toUpperCase();
+        document.getElementById('p-t-do').innerText = val('patente_tercero');
+        document.getElementById('p-t-ma').innerText = val('marca_tercero');
+        document.getElementById('p-t-se').innerText = val('seguro_tercero');
         document.getElementById('p-t-po').innerText = val('poliza_tercero');
         document.getElementById('p-t-dan').innerText = val('danos_tercero');
 
         if(document.getElementById('es_propietario').value === 'NO'){
-            document.getElementById('p-t-p-no').innerText = val('prop_nombre').toUpperCase();
+            document.getElementById('p-t-p-no').innerText = val('prop_nombre');
             document.getElementById('p-t-p-dn').innerText = val('prop_dni');
             document.getElementById('p-t-p-te').innerText = val('prop_tel');
-        } else { document.getElementById('p-t-p-no').innerText = val('nombre_chofer').toUpperCase(); }
+        } else { document.getElementById('p-t-p-no').innerText = val('nombre_chofer'); }
 
         document.getElementById('p-relato').innerText = val('descripcion');
         document.getElementById('p-lista-fotos').innerHTML = links.map(l => `<p>${l}</p>`).join('');
 
-        // GENERAR PDF ESCALADO
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 1000)); // Esperar renderizado
         const pdfBlob = await html2pdf().set({ 
             margin: 0, 
-            html2canvas: { scale: 2 },
+            html2canvas: { scale: 2, useCORS: true },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         }).from(document.getElementById('pdf-template')).output('blob');
 
-        const pdfPath = `${folder}/Denuncia_Oficial_Barsat.pdf`;
+        const pdfPath = `${folder}/Denuncia_Oficial.pdf`;
         await fetch(`${URL_API}/storage/v1/object/denuncias/${pdfPath}`, {
-            method: 'POST',
-            headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/pdf' },
-            body: pdfBlob
+            method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/pdf' }, body: pdfBlob
         });
 
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
-        
         await fetch(`${URL_API}/rest/v1/Siniestros`, {
-            method: 'POST',
-            headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ fecha_hecho: val('fecha_hecho'), nombre_chofer: val('nombre_chofer'), link_pdf: linkFinal, dominio_nuestro: unidad.DOMINIO })
         });
 
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
-        alert("Denuncia enviada con éxito.");
+        alert("Denuncia enviada. Verificando el PDF de 3 hojas...");
         location.reload();
-    } catch (e) { alert("Error: " + e.message); btn.disabled = false; btn.innerText = "Cargar Denuncia"; }
+    } catch (e) { alert("Error: " + e.message); btn.disabled = false; }
 }
