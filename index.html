@@ -22,6 +22,7 @@
 
         <div id="pantalla-formulario" class="hidden">
             <h2 id="titulo-paso">Paso 1: El Hecho</h2>
+            <p id="msg-obligatorio" style="font-size: 11px; color: #888;">* Campos con asterisco son obligatorios (o ponga NO INFORMA)</p>
             <div class="progress-bar"><div id="progress" style="width: 20%;"></div></div>
 
             <div class="step" id="step-1">
@@ -32,7 +33,7 @@
                 </div>
                 <input type="text" id="provincia" placeholder="Provincia*" required maxlength="30">
                 <input type="text" id="localidad" placeholder="Localidad*" required maxlength="30">
-                <input type="text" id="cp" placeholder="Código Postal*" required maxlength="8">
+                <input type="text" id="cp" placeholder="Código Postal*" required maxlength="12">
                 <input type="text" id="calle" placeholder="Calle / Ruta / Km*" required maxlength="50">
                 <input type="text" id="interseccion" placeholder="Intersección / Entre calles*" required maxlength="50">
                 <button onclick="validarYPasar(2)">Siguiente</button>
@@ -90,93 +91,93 @@
     </div>
 
     <div style="position: absolute; left: -10000px; top: 0;">
-        <div id="pdf-template" style="width: 790px; background: white; color: black; font-family: Arial, sans-serif; font-size: 11px;">
+        <div id="pdf-template" style="width: 210mm; background: white; color: black; font-family: Arial, sans-serif; font-size: 10pt;">
             
-            <div style="height: 1120px; padding: 40px 50px; box-sizing: border-box;">
+            <div style="height: 297mm; padding: 15mm; box-sizing: border-box; border-bottom: 1px dashed #ccc;">
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 5px;">
-                    <h1 style="margin: 0; font-size: 20px;">DENUNCIA DE SINIESTRO</h1>
-                    <div style="border: 1px solid #000; padding: 2px 15px; font-weight: bold;">ANEXO I</div>
+                    <h1 style="margin: 0; font-size: 16pt;">DENUNCIA DE SINIESTRO</h1>
+                    <div style="border: 1px solid #000; padding: 2px 10px; font-weight: bold;">ANEXO I</div>
                 </div>
-                <div style="background: #ccc; padding: 5px; font-weight: bold; margin-top: 10px; border: 1px solid #000; font-size: 12px;">AUTOMOTORES</div>
+                <div style="background: #e0e0e0; padding: 4px; font-weight: bold; margin-top: 5px; border: 1px solid #000; font-size: 10pt;">AUTOMOTORES</div>
                 
-                <div style="margin-top: 15px; display: flex; justify-content: space-between;">
+                <div style="margin-top: 10px; display: flex; justify-content: space-between; font-size: 9pt;">
                     <span>Aseguradora: <b>LA SEGUNDA / ALLIANZ</b></span>
                     <span>Póliza Nº: <b>58814369</b></span>
                     <span>Siniestro Nº: <b id="p-sini-id"></b></span>
                 </div>
 
-                <div style="background: #e0e0e0; padding: 4px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000;">1 FECHA DEL SINIESTRO</div>
-                <div style="margin-top: 5px;">
+                <div style="background: #f2f2f2; padding: 3px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000; font-size: 9pt;">1 FECHA DEL SINIESTRO</div>
+                <div style="margin-top: 5px; font-size: 9pt;">
                     Fecha: <b id="p-fecha"></b> | Hora: <b id="p-hora"></b> | Estado del Tiempo: <b>BUENO</b><br>
                     Fecha denuncia: <b id="p-fecha-den"></b>
                 </div>
 
-                <div style="background: #e0e0e0; padding: 4px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000;">2 LUGAR DEL SINIESTRO</div>
-                <div style="margin-top: 5px;">
+                <div style="background: #f2f2f2; padding: 3px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000; font-size: 9pt;">2 LUGAR DEL SINIESTRO</div>
+                <div style="margin-top: 5px; font-size: 9pt;">
                     Localidad: <b id="p-loc"></b> | Provincia: <b id="p-prov"></b> | País: <b>ARGENTINA</b><br>
                     Calle: <b id="p-calle"></b> | Intersección de / Entre: <b id="p-int"></b>
                 </div>
 
-                <div style="background: #e0e0e0; padding: 4px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000;">3 DATOS DEL CONDUCTOR DEL VEHÍCULO ASEGURADO</div>
-                <div style="margin-top: 5px;">
+                <div style="background: #f2f2f2; padding: 3px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000; font-size: 9pt;">3 DATOS DEL CONDUCTOR DEL VEHÍCULO ASEGURADO</div>
+                <div style="margin-top: 5px; font-size: 9pt;">
                     Apellido y Nombre: <b id="p-c-nom"></b> | Teléfono: <b id="p-c-tel"></b><br>
                     DNI: <b id="p-c-dni"></b> | Domicilio: <b id="p-c-dom"></b> | C.P: <b id="p-cp"></b>
                 </div>
 
-                <div style="background: #e0e0e0; padding: 4px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000;">4 DATOS DEL ASEGURADO</div>
-                <div style="margin-top: 5px;">
+                <div style="background: #f2f2f2; padding: 3px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000; font-size: 9pt;">4 DATOS DEL ASEGURADO</div>
+                <div style="margin-top: 5px; font-size: 9pt;">
                     Nombre y Apellido o Razón Social: <b>TENLOG S.A.</b> | CUIT: <b>30715701916</b><br>
                     Domicilio: <b>ALEM 424, CABA</b> | Teléfono: <b>43013136</b>
                 </div>
 
-                <div style="background: #e0e0e0; padding: 4px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000;">5 DATOS DEL VEHÍCULO ASEGURADO</div>
-                <div style="margin-top: 5px;">
+                <div style="background: #f2f2f2; padding: 3px; font-weight: bold; margin-top: 15px; border-top: 1px solid #000; font-size: 9pt;">5 DATOS DEL VEHÍCULO ASEGURADO</div>
+                <div style="margin-top: 5px; font-size: 9pt;">
                     Marca: <b id="p-v-ma"></b> | Modelo: <b id="p-v-mo"></b> | Dominio: <b id="p-v-do"></b><br>
                     Tipo: <b id="p-v-ti"></b> | Nº Chasis: <b id="p-v-cha"></b> | Año: <b>2023</b>
                 </div>
-                <div style="border: 1px solid #000; padding: 10px; margin-top: 15px; min-height: 100px;">
+                <div style="border: 1px solid #000; padding: 10px; margin-top: 15px; min-height: 100px; font-size: 9pt;">
                     <b>Detalle los daños del Vehículo:</b><br><span id="p-v-dan"></span>
                 </div>
             </div>
 
-            <div style="height: 1120px; padding: 40px 50px; box-sizing: border-box;">
-                <div style="background: #e0e0e0; padding: 5px; font-weight: bold; border: 1px solid #000;">6 DETALLE DEL OTRO VEHÍCULO</div>
-                <div style="margin-top: 15px;">
+            <div style="height: 297mm; padding: 15mm; box-sizing: border-box; border-bottom: 1px dashed #ccc;">
+                <div style="background: #e0e0e0; padding: 5px; font-weight: bold; border: 1px solid #000; font-size: 10pt;">6 DETALLE DEL OTRO VEHÍCULO</div>
+                <div style="margin-top: 15px; font-size: 9pt;">
                     Propietario: <b id="p-t-p-no"></b> | DNI: <b id="p-t-p-dn"></b> | Teléfono: <b id="p-t-p-te"></b><br>
                     Marca: <b id="p-t-ma"></b> | Modelo: <b id="p-t-mo"></b> | Dominio: <b id="p-t-do"></b><br>
                     Aseguradora: <b id="p-t-se"></b> | Póliza: <b id="p-t-po"></b>
                 </div>
-                <div style="border: 1px solid #000; padding: 10px; margin-top: 15px; min-height: 100px;">
+                <div style="border: 1px solid #000; padding: 10px; margin-top: 15px; min-height: 100px; font-size: 9pt;">
                     <b>Detalle los daños del vehículo tercero:</b><br><span id="p-t-dan"></span>
                 </div>
 
-                <div style="background: #e0e0e0; padding: 4px; font-weight: bold; margin-top: 40px; border-top: 1px solid #000;">7 CARACTERÍSTICAS DEL SINIESTRO</div>
-                <p>Tipo de Accidente: <b>COLISIÓN / ROCE</b> | Colisión con: <b>VEHÍCULO</b></p>
+                <div style="background: #f2f2f2; padding: 4px; font-weight: bold; margin-top: 40px; border-top: 1px solid #000; font-size: 9pt;">7 CARACTERÍSTICAS DEL SINIESTRO</div>
+                <p style="font-size: 9pt;">Tipo de Accidente: <b>COLISIÓN / ROCE</b> | Colisión con: <b>VEHÍCULO</b></p>
 
-                <div style="background: #e0e0e0; padding: 4px; font-weight: bold; margin-top: 20px; border-top: 1px solid #000;">8 CROQUIS</div>
-                <div style="display: flex; justify-content: center; margin-top: 50px;">
-                    <div style="position: relative; width: 300px; height: 300px; border: 1px solid #000;">
-                        <div style="position: absolute; top: 0; bottom: 0; left: 135px; width: 30px; border-left: 1px solid #000; border-right: 1px solid #000;"></div>
-                        <div style="position: absolute; left: 0; right: 0; top: 135px; height: 30px; border-top: 1px solid #000; border-bottom: 1px solid #000;"></div>
-                        <b style="position: absolute; top: -30px; left: 142px; font-size: 18px;">N</b>
-                        <b style="position: absolute; bottom: -30px; left: 142px; font-size: 18px;">S</b>
-                        <b style="position: absolute; left: -30px; top: 138px; font-size: 18px;">O</b>
-                        <b style="position: absolute; right: -30px; top: 138px; font-size: 18px;">E</b>
+                <div style="background: #f2f2f2; padding: 4px; font-weight: bold; margin-top: 20px; border-top: 1px solid #000; font-size: 9pt;">8 CROQUIS</div>
+                <div style="display: flex; justify-content: center; margin-top: 40px;">
+                    <div style="position: relative; width: 60mm; height: 60mm; border: 1px solid #000;">
+                        <div style="position: absolute; top: 0; bottom: 0; left: 27mm; width: 6mm; border-left: 1px solid #000; border-right: 1px solid #000;"></div>
+                        <div style="position: absolute; left: 0; right: 0; top: 27mm; height: 6mm; border-top: 1px solid #000; border-bottom: 1px solid #000;"></div>
+                        <b style="position: absolute; top: -7mm; left: 28mm; font-size: 14pt;">N</b>
+                        <b style="position: absolute; bottom: -7mm; left: 28mm; font-size: 14pt;">S</b>
+                        <b style="position: absolute; left: -7mm; top: 28mm; font-size: 14pt;">O</b>
+                        <b style="position: absolute; right: -7mm; top: 28mm; font-size: 14pt;">E</b>
                     </div>
                 </div>
             </div>
 
-            <div style="height: 1120px; padding: 40px 50px; box-sizing: border-box;">
-                <div style="background: #e0e0e0; padding: 5px; font-weight: bold; border: 1px solid #000;">DETALLES DEL SINIESTRO (RELATO COMPLETO)</div>
-                <div id="p-relato" style="border: 1px solid #000; padding: 20px; min-height: 450px; white-space: pre-wrap; margin-top: 15px; line-height: 1.8;"></div>
+            <div style="height: 297mm; padding: 15mm; box-sizing: border-box;">
+                <div style="background: #e0e0e0; padding: 5px; font-weight: bold; border: 1px solid #000; font-size: 10pt;">DETALLES DEL SINIESTRO (RELATO COMPLETO)</div>
+                <div id="p-relato" style="border: 1px solid #000; padding: 20px; min-height: 400px; white-space: pre-wrap; margin-top: 15px; line-height: 1.6; font-size: 10pt;"></div>
                 
-                <div style="background: #e0e0e0; padding: 5px; font-weight: bold; margin-top: 40px; border: 1px solid #000;">REGISTRO FOTOGRÁFICO Y DECLARACIÓN</div>
-                <p style="font-size: 10px; margin-top: 10px;">Los datos consignados tienen carácter de declaración jurada.</p>
-                <div id="p-lista-fotos" style="font-size: 9px; color: #555; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px;"></div>
+                <div style="background: #e0e0e0; padding: 5px; font-weight: bold; margin-top: 40px; border: 1px solid #000; font-size: 10pt;">REGISTRO FOTOGRÁFICO Y DECLARACIÓN</div>
+                <p style="font-size: 9pt; margin-top: 10px;">Los datos consignados tienen carácter de declaración jurada.</p>
+                <div id="p-lista-fotos" style="font-size: 8pt; color: #555; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px;"></div>
                 
-                <div style="margin-top: 60px; display: flex; justify-content: space-around;">
-                    <div style="text-align: center; border-top: 1px solid #000; width: 200px; padding-top: 5px;">Firma del Conductor</div>
-                    <div style="text-align: center; border-top: 1px solid #000; width: 200px; padding-top: 5px;">Aclaración</div>
+                <div style="margin-top: 60px; display: flex; justify-content: space-around; font-size: 9pt;">
+                    <div style="text-align: center; border-top: 1px solid #000; width: 180px; padding-top: 5px;">Firma del Conductor</div>
+                    <div style="text-align: center; border-top: 1px solid #000; width: 180px; padding-top: 5px;">Aclaración</div>
                 </div>
             </div>
         </div>

@@ -6,23 +6,28 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 
-// Validación estricta: Solo numeros o la frase exacta "NO INFORMA"
+// Validación Blindada: Solo números O la frase exacta "NO INFORMA"
 function aplicarValidacionEstricta(id) {
     const input = document.getElementById(id);
     input.addEventListener('input', () => {
         let val = input.value.toUpperCase();
-        // Si el usuario esta intentando escribir "NO INFORMA", lo dejamos
-        if ("NO INFORMA".startsWith(val)) return;
-        // Si no, forzamos a que sean solo numeros
-        if (val !== "NO INFORMA") {
+        
+        // Si lo que escribe NO coincide con el inicio de "NO INFORMA", filtramos solo números
+        if (!"NO INFORMA".startsWith(val)) {
             input.value = val.replace(/[^0-9]/g, '');
+        } else {
+            input.value = val; // Permitimos que escriba la frase
         }
     });
-    // Al perder el foco, si no es numero ni "NO INFORMA", se limpia
+
+    // Al salir del campo, si no es número ni la frase completa, limpiamos
     input.addEventListener('blur', () => {
         let val = input.value.toUpperCase();
-        if (val !== "NO INFORMA" && isNaN(val.replace(/ /g,''))) {
+        if (val !== "" && val !== "NO INFORMA" && isNaN(val.replace(/\s/g,''))) {
             input.value = "";
+            input.style.borderColor = "red";
+        } else {
+            input.style.borderColor = "#ddd";
         }
     });
 }
@@ -32,7 +37,7 @@ window.onload = function() {
     document.getElementById('fecha_hecho').setAttribute('max', hoy);
     emailjs.init(EMAILJS_PUBLIC_KEY);
     
-    // Blindar campos
+    // Aplicamos a DNI, TEL y CP
     ['dni_chofer', 'tel_chofer', 'prop_dni', 'prop_tel', 'cp'].forEach(aplicarValidacionEstricta);
 
     document.getElementById('es_propietario').addEventListener('change', function() {
@@ -62,6 +67,12 @@ function cambiarPaso(paso) {
     document.getElementById(`step-${paso}`).classList.remove('hidden');
     document.getElementById('progress').style.width = (paso * 20) + "%";
     document.getElementById('titulo-paso').innerText = titulos[paso];
+    
+    // Manejo de leyenda obligatoria
+    const msg = document.getElementById('msg-obligatorio');
+    if (paso === 5) msg.classList.add('hidden');
+    else msg.classList.remove('hidden');
+
     window.scrollTo(0,0);
 }
 
@@ -133,7 +144,7 @@ async function enviarSiniestro() {
         document.getElementById('p-relato').innerText = val('descripcion');
         document.getElementById('p-lista-fotos').innerHTML = links.map(l => `<p>${l}</p>`).join('');
 
-        await new Promise(r => setTimeout(r, 1200)); // Mas tiempo para asegurar renderizado de 3 hojas
+        await new Promise(r => setTimeout(r, 1000));
         const pdfBlob = await html2pdf().set({ 
             margin: 0, 
             html2canvas: { scale: 2, useCORS: true },
@@ -152,7 +163,7 @@ async function enviarSiniestro() {
         });
 
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
-        alert("Denuncia enviada. Verificando PDF de 3 hojas...");
+        alert("Denuncia enviada. Verificando PDF...");
         location.reload();
     } catch (e) { alert("Error: " + e.message); btn.disabled = false; }
 }
