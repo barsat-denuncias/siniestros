@@ -7,7 +7,6 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 let unidad = {};
 
 window.onload = function() {
-    // Bloqueo de fechas futuras
     const hoy = new Date().toISOString().split('T')[0];
     document.getElementById('fecha_hecho').setAttribute('max', hoy);
     emailjs.init(EMAILJS_PUBLIC_KEY);
@@ -22,7 +21,6 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
     const patente = document.getElementById('patente').value.trim().toUpperCase();
     const chasis = document.getElementById('chasis_val').value.trim();
     
-    // USAMOS TUS COLUMNAS: DOMINIO, CHASIS, MODELO, VEHICULO
     const res = await fetch(`${URL_API}/rest/v1/Camiones?DOMINIO=eq.${patente}&CHASIS=like.*${chasis}`, {
         headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
     });
@@ -41,21 +39,33 @@ function cambiarPaso(paso) {
     document.querySelectorAll('.step').forEach(s => s.classList.add('hidden'));
     document.getElementById(`step-${paso}`).classList.remove('hidden');
     document.getElementById('progress').style.width = (paso * 20) + "%";
-    document.getElementById('titulo-paso').innerText = titulos[paso]; // CORRECCIÓN TÍTULO
+    document.getElementById('titulo-paso').innerText = titulos[paso];
     window.scrollTo(0,0);
 }
 
 function validarYPasar(proximoPaso) {
     const inputs = document.getElementById(`step-${proximoPaso - 1}`).querySelectorAll('[required]');
     let valido = true;
+
     inputs.forEach(i => {
-        // Validación solo números para DNI y Tel
-        if(i.id.includes('dni') || i.id.includes('tel') || i.id === 'cp'){
-            i.value = i.value.replace(/[^0-9]/g,'');
+        // Validaciones personalizadas de error en vez de hints
+        if (i.id === "dni_chofer" || i.id === "prop_dni") {
+            if (i.value !== "NO INFORMA" && (i.value.length < 7 || isNaN(i.value))) {
+                alert("El DNI debe ser numérico de 7 u 8 cifras (o ponga NO INFORMA)");
+                valido = false;
+            }
         }
+        if (i.id === "tel_chofer" || i.id === "prop_tel") {
+             if (i.value !== "NO INFORMA" && (i.value.length < 10 || isNaN(i.value))) {
+                alert("El Teléfono debe ser numérico de al menos 10 cifras");
+                valido = false;
+            }
+        }
+        
         if(!i.checkValidity()){ i.style.borderColor = "red"; valido = false; } 
         else { i.style.borderColor = "#ddd"; }
     });
+
     if(valido) cambiarPaso(proximoPaso);
 }
 
@@ -67,7 +77,6 @@ async function enviarSiniestro() {
     const val = (id) => document.getElementById(id).value.trim() || "NO INFORMA";
 
     try {
-        // SUBIDA DE FOTOS (CATEGORIZADAS)
         const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
         const links = [];
         for (const c of cats) {
@@ -83,28 +92,36 @@ async function enviarSiniestro() {
             }
         }
 
-        // LLENAR PDF
+        // POBLAR PDF OFICIAL
+        document.getElementById('p-sini-id').innerText = ts.toString().slice(-6);
         document.getElementById('p-fecha').innerText = val('fecha_hecho');
         document.getElementById('p-hora').innerText = val('hora_hecho');
+        document.getElementById('p-fecha-den').innerText = new Date().toLocaleDateString();
         document.getElementById('p-cp').innerText = val('cp');
-        document.getElementById('p-lugar').innerText = `${val('calle')} e/ ${val('interseccion')}, ${val('localidad')}, ${val('provincia')}`;
+        document.getElementById('p-prov').innerText = val('provincia');
+        document.getElementById('p-loc').innerText = val('localidad');
+        document.getElementById('p-calle').innerText = val('calle');
+        document.getElementById('p-int').innerText = val('interseccion');
+        
         document.getElementById('p-c-nom').innerText = val('nombre_chofer').toUpperCase();
         document.getElementById('p-c-dni').innerText = val('dni_chofer');
         document.getElementById('p-c-tel').innerText = val('tel_chofer');
         document.getElementById('p-c-dom').innerText = `${val('domicilio_chofer')}, ${val('loc_chofer')}, ${val('prov_chofer')}`;
         
-        // DATOS AUTOMÁTICOS
         document.getElementById('p-v-do').innerText = unidad.DOMINIO;
-        document.getElementById('p-v-mm').innerText = unidad.MODELO; // Marca/Modelo guardado en tu tabla
-        document.getElementById('p-v-ti').innerText = unidad.VEHICULO; // Tipo (camion socio/utilitario)
-        document.getElementById('p-v-ch').innerText = unidad.CHASIS;
+        document.getElementById('p-v-ma').innerText = "MERCEDES BENZ"; // O unidad.MARCA si la agregaste
+        document.getElementById('p-v-mo').innerText = unidad.MODELO;
+        document.getElementById('p-v-ti').innerText = unidad.VEHICULO;
+        document.getElementById('p-v-cha').innerText = unidad.CHASIS;
+        document.getElementById('p-v-mot').innerText = "S/D";
+        document.getElementById('p-v-pol').innerText = "58814369"; // Poliza por defecto
 
         document.getElementById('p-v-dan').innerText = val('danos_propios');
         document.getElementById('p-t-do').innerText = val('patente_tercero').toUpperCase();
-        document.getElementById('p-t-mm').innerText = val('marca_tercero').toUpperCase();
+        document.getElementById('p-t-ma').innerText = val('marca_tercero').toUpperCase();
         document.getElementById('p-t-se').innerText = val('seguro_tercero').toUpperCase();
         document.getElementById('p-t-po').innerText = val('poliza_tercero');
-        document.getElementById('p-t-da').innerText = val('danos_tercero');
+        document.getElementById('p-t-dan').innerText = val('danos_tercero');
 
         if(document.getElementById('es_propietario').value === 'NO'){
             document.getElementById('p-t-p-no').innerText = val('prop_nombre').toUpperCase();
@@ -115,10 +132,15 @@ async function enviarSiniestro() {
         document.getElementById('p-relato').innerText = val('descripcion');
         document.getElementById('p-lista-fotos').innerHTML = links.map(l => `<p>${l}</p>`).join('');
 
-        // GENERAR PDF
+        // GENERAR PDF ESCALADO
         await new Promise(r => setTimeout(r, 800));
-        const pdfBlob = await html2pdf().set({ margin: 0, html2canvas: { scale: 2 } }).from(document.getElementById('pdf-template')).output('blob');
-        const pdfPath = `${folder}/Denuncia_Oficial.pdf`;
+        const pdfBlob = await html2pdf().set({ 
+            margin: 0, 
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        }).from(document.getElementById('pdf-template')).output('blob');
+
+        const pdfPath = `${folder}/Denuncia_Oficial_Barsat.pdf`;
         await fetch(`${URL_API}/storage/v1/object/denuncias/${pdfPath}`, {
             method: 'POST',
             headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/pdf' },
@@ -127,7 +149,6 @@ async function enviarSiniestro() {
 
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
         
-        // GUARDAR EN TABLA
         await fetch(`${URL_API}/rest/v1/Siniestros`, {
             method: 'POST',
             headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/json' },
@@ -135,7 +156,7 @@ async function enviarSiniestro() {
         });
 
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
-        alert("Denuncia cargada correctamente.");
+        alert("Denuncia enviada con éxito.");
         location.reload();
     } catch (e) { alert("Error: " + e.message); btn.disabled = false; btn.innerText = "Cargar Denuncia"; }
 }
