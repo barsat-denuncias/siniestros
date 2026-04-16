@@ -91,109 +91,109 @@
     </div>
 
     <div style="position: absolute; left: -10000px; top: 0;">
-        <div id="pdf-template" style="width: 210mm; background: white; color: black; font-family: Arial, sans-serif; font-size: 9pt; margin: 0; padding: 0; line-height: 1.4;">
+        <div id="pdf-template" style="width: 210mm; background: white; color: black; font-family: Arial, sans-serif; font-size: 10pt; margin: 0; padding: 0; line-height: 1.6;">
             
-            <div style="height: 296mm; padding: 12mm 15mm; box-sizing: border-box; position: relative; border-bottom: 1px dashed #ccc;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;">
-                    <h1 style="margin: 0; font-size: 16pt; font-weight: bold;">DENUNCIA DE SINIESTRO</h1>
-                    <div style="border: 1px solid #000; padding: 2px 15px; font-weight: bold;">ANEXO I</div>
-                </div>
+            <div style="height: 296mm; padding: 12mm 15mm; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; border-bottom: 1px dashed #ccc;">
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                        <h1 style="margin: 0; font-size: 18pt; font-weight: bold;">DENUNCIA DE SINIESTRO</h1>
+                        <div style="border: 1px solid #000; padding: 2px 15px; font-weight: bold;">ANEXO I</div>
+                    </div>
 
-                <div style="background: #ccc; padding: 4px; font-weight: bold; border: 1px solid #000; font-size: 10pt; margin-bottom: 5px;">AUTOMOTORES</div>
-                
-                <div style="display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 8.5pt;">
-                    <span>Aseguradora: <b id="p-v-aseg"></b></span>
-                    <span>Póliza Nº: <b id="p-v-pol"></b></span>
-                    <span>Siniestro Nº: <b id="p-sini-id"></b></span>
-                </div>
+                    <div style="background: #e0e0e0; padding: 5px; font-weight: bold; border: 1px solid #000; font-size: 11pt; margin-bottom: 15px;">AUTOMOTORES</div>
+                    
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 35px; font-size: 9pt;">
+                        <span>Aseguradora: <b id="p-v-aseg"></b></span>
+                        <span>Póliza Nº: <b id="p-v-pol"></b></span>
+                        <span>Siniestro Nº: <b id="p-sini-id"></b></span>
+                    </div>
 
-                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 8px;">1 &nbsp; FECHA DEL SINIESTRO</div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; margin-bottom: 5px;">
-                    <div>Fecha: <b id="p-fecha"></b></div>
-                    <div>Hora: <b id="p-hora"></b></div>
-                    <div>Estado del Tiempo: <b>BUENO</b></div>
-                </div>
-                <div style="margin-bottom: 20px;">Fecha denuncia: <b id="p-fecha-den"></b></div>
+                    <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 15px; font-size: 11pt;">1 &nbsp; FECHA DEL SINIESTRO</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; margin-bottom: 15px;">
+                        <div>Fecha: <b id="p-fecha"></b></div>
+                        <div>Hora: <b id="p-hora"></b></div>
+                        <div>Estado del Tiempo: <b>BUENO</b></div>
+                    </div>
+                    <div style="margin-bottom: 45px;">Fecha denuncia: <b id="p-fecha-den"></b></div>
 
-                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 8px;">2 &nbsp; LUGAR DEL SINIESTRO</div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 5px;">
-                    <div>Localidad: <b id="p-loc"></b></div>
-                    <div>Provincia: <b id="p-prov"></b></div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 5px;">
-                    <div>País: <b>ARGENTINA</b></div>
-                    <div>Calle: <b id="p-calle"></b></div>
-                </div>
-                <div style="margin-bottom: 20px;">Intersección de / Entre: <b id="p-int"></b></div>
+                    <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 15px; font-size: 11pt;">2 &nbsp; LUGAR DEL SINIESTRO</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 10px;">
+                        <div>Localidad: <b id="p-loc"></b></div>
+                        <div>Provincia: <b id="p-prov"></b></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 10px;">
+                        <div>País: <b>ARGENTINA</b></div>
+                        <div>Calle: <b id="p-calle"></b></div>
+                    </div>
+                    <div style="margin-bottom: 45px;">Intersección de / Entre: <b id="p-int"></b></div>
 
-                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 8px;">3 &nbsp; DATOS DEL CONDUCTOR DEL VEHÍCULO ASEGURADO</div>
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 5px;">
-                    <div>Apellido y Nombre: <b id="p-c-nom"></b></div>
-                    <div>Email: <b id="p-c-email">mbenitez@barsat.com.ar</b></div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 5px;">
-                    <div>Tipo y Nº documento: <b id="p-c-dni"></b></div>
-                    <div>Teléfono: <b id="p-c-tel"></b></div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 5px;">
-                    <div>Domicilio: <b id="p-c-dom"></b></div>
-                    <div>C.P: <b id="p-cp"></b></div>
-                </div>
-                <div style="margin-bottom: 20px; display: grid; grid-template-columns: 1.5fr 1fr;">
-                    <div>Conductor habitual: <b>SI</b></div>
-                </div>
+                    <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 15px; font-size: 11pt;">3 &nbsp; DATOS DEL CONDUCTOR DEL VEHÍCULO ASEGURADO</div>
+                    <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 10px;">
+                        <div>Apellido y Nombre: <b id="p-c-nom"></b></div>
+                        <div>Email: <b id="p-c-email">mbenitez@barsat.com.ar</b></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 10px;">
+                        <div>Tipo y Nº documento: <b id="p-c-dni"></b></div>
+                        <div>Teléfono: <b id="p-c-tel"></b></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 10px;">
+                        <div>Domicilio: <b id="p-c-dom"></b></div>
+                        <div>C.P: <b id="p-cp"></b></div>
+                    </div>
+                    <div style="margin-bottom: 45px;">Conductor habitual: <b>SI</b></div>
 
-                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 8px;">4 &nbsp; DATOS DEL ASEGURADO</div>
-                <div style="margin-bottom: 5px;">Nombre y Apellido o Razón Social: <b id="p-aseg-razon"></b></div>
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 5px;">
-                    <div>CUIT: <b id="p-aseg-cuit"></b></div>
-                    <div>Teléfono: <b id="p-aseg-tel"></b></div>
-                </div>
-                <div style="margin-bottom: 20px; display: grid; grid-template-columns: 1.5fr 1fr;">
-                    <div>Domicilio: <b id="p-aseg-dom"></b></div>
-                    <div>C.P: <b id="p-aseg-cp"></b></div>
-                </div>
+                    <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 15px; font-size: 11pt;">4 &nbsp; DATOS DEL ASEGURADO</div>
+                    <div style="margin-bottom: 15px;">Nombre y Apellido o Razón Social: <b id="p-aseg-razon"></b></div>
+                    <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 10px;">
+                        <div>CUIT: <b id="p-aseg-cuit"></b></div>
+                        <div>Teléfono: <b id="p-aseg-tel"></b></div>
+                    </div>
+                    <div style="margin-bottom: 45px; display: grid; grid-template-columns: 1.5fr 1fr;">
+                        <div>Domicilio: <b id="p-aseg-dom"></b></div>
+                        <div>C.P: <b id="p-aseg-cp"></b></div>
+                    </div>
 
-                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 8px;">5 &nbsp; DATOS DEL VEHÍCULO ASEGURADO</div>
-                <div style="display: grid; grid-template-columns: 1fr 1.5fr; margin-bottom: 5px;">
-                    <div>Marca: <b id="p-v-ma"></b></div>
-                    <div>Modelo: <b id="p-v-mo"></b></div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; margin-bottom: 5px;">
-                    <div>Dominio: <b id="p-v-do"></b></div>
-                    <div>Tipo: <b id="p-v-ti"></b></div>
-                    <div>Año: <b>2023</b></div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1.5fr; margin-bottom: 10px;">
-                    <div>Nº Motor: <b>S/D</b></div>
-                    <div>Nº Chasis: <b id="p-v-cha"></b></div>
-                </div>
-                <div style="margin-top: 5px; min-height: 40px; border: 1px solid #eee; padding: 5px;">
-                    Detalle los daños del Vehículo: <b id="p-v-dan"></b>
+                    <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 15px; font-size: 11pt;">5 &nbsp; DATOS DEL VEHÍCULO ASEGURADO</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1.5fr; margin-bottom: 10px;">
+                        <div>Marca: <b id="p-v-ma"></b></div>
+                        <div>Modelo: <b id="p-v-mo"></b></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; margin-bottom: 10px;">
+                        <div>Dominio: <b id="p-v-do"></b></div>
+                        <div>Tipo: <b id="p-v-ti"></b></div>
+                        <div>Año: <b>2023</b></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1.5fr; margin-bottom: 20px;">
+                        <div>Nº Motor: <b>S/D</b></div>
+                        <div>Nº Chasis: <b id="p-v-cha"></b></div>
+                    </div>
+                    <div style="min-height: 80px; border: 1px solid #f0f0f0; padding: 8px;">
+                        Detalle los daños del Vehículo: <b id="p-v-dan"></b>
+                    </div>
                 </div>
             </div>
 
             <div style="height: 296mm; padding: 12mm 15mm; box-sizing: border-box; position: relative;">
-                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 10px;">6 &nbsp; DETALLE DEL OTRO VEHÍCULO</div>
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 5px;">
+                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 15px; font-size: 11pt;">6 &nbsp; DETALLE DEL OTRO VEHÍCULO</div>
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 10px;">
                     <div>Propietario: <b id="p-t-p-no"></b></div>
                     <div>DNI: <b id="p-t-p-dn"></b></div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1.5fr; margin-bottom: 5px;">
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 10px;">
                     <div>Marca: <b id="p-t-ma"></b></div>
                     <div>Modelo: <b id="p-t-mo"></b></div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1.5fr; margin-bottom: 5px;">
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 10px;">
                     <div>Dominio: <b id="p-t-do"></b></div>
                     <div>Aseguradora: <b id="p-t-se"></b></div>
                 </div>
-                <div style="margin-bottom: 10px;">Póliza: <b id="p-t-po"></b></div>
-                <div style="margin-bottom: 15px; border: 1px solid #eee; padding: 5px;">Daños tercero: <b id="p-t-dan"></b></div>
+                <div style="margin-bottom: 15px;">Póliza: <b id="p-t-po"></b></div>
+                <div style="margin-bottom: 30px; border: 1px solid #f0f0f0; padding: 8px;">Daños tercero: <b id="p-t-dan"></b></div>
 
-                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-top: 15px; margin-bottom: 10px;">8 &nbsp; CROQUIS Y RELATO</div>
-                <div style="display: flex; gap: 20px; align-items: flex-start; margin-top: 10px;">
-                    <div style="width: 200px; height: 200px; position: relative;">
-                        <svg width="200" height="200" viewBox="0 0 100 100">
+                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-top: 20px; margin-bottom: 15px; font-size: 11pt;">8 &nbsp; CROQUIS Y RELATO</div>
+                <div style="display: flex; gap: 25px; align-items: flex-start; margin-top: 20px;">
+                    <div style="width: 180px; height: 180px; position: relative;">
+                        <svg width="180" height="180" viewBox="0 0 100 100">
                             <line x1="43" y1="0" x2="43" y2="40" stroke="black" stroke-width="0.8"/>
                             <line x1="43" y1="60" x2="43" y2="100" stroke="black" stroke-width="0.8"/>
                             <line x1="57" y1="0" x2="57" y2="40" stroke="black" stroke-width="0.8"/>
@@ -204,22 +204,22 @@
                             <line x1="60" y1="57" x2="100" y2="57" stroke="black" stroke-width="0.8"/>
                             <text x="47" y="10" font-size="7" font-weight="bold">N</text>
                             <text x="47" y="96" font-size="7" font-weight="bold">S</text>
-                            <text x="5" y="52" font-size="7" font-weight="bold">O</text>
-                            <text x="90" y="52" font-size="7" font-weight="bold">E</text>
+                            <text x="4" y="52" font-size="7" font-weight="bold">O</text>
+                            <text x="91" y="52" font-size="7" font-weight="bold">E</text>
                         </svg>
                     </div>
                     <div style="flex: 1;">
-                        <div style="font-weight: bold; margin-bottom: 5px;">DETALLES DEL SINIESTRO:</div>
-                        <div id="p-relato" style="font-size: 8.5pt; white-space: pre-wrap; min-height: 160px; line-height: 1.4;"></div>
+                        <div style="font-weight: bold; margin-bottom: 8px;">DETALLES DEL SINIESTRO:</div>
+                        <div id="p-relato" style="font-size: 9pt; white-space: pre-wrap; min-height: 150px; line-height: 1.5; border: 1px solid #eee; padding: 10px;"></div>
                     </div>
                 </div>
 
-                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-top: 25px; margin-bottom: 10px;">REGISTRO FOTOGRÁFICO</div>
-                <div id="p-lista-fotos" style="font-size: 7.5pt; color: #444; margin-top: 10px; border-top: 1px solid #ccc; padding-top: 10px;"></div>
+                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-top: 40px; margin-bottom: 15px; font-size: 11pt;">REGISTRO FOTOGRÁFICO</div>
+                <div id="p-lista-fotos" style="font-size: 8pt; color: #444; margin-top: 15px; border-top: 1px solid #ccc; padding-top: 10px; min-height: 50px;"></div>
                 
-                <div style="position: absolute; bottom: 35mm; left: 15mm; right: 15mm; display: flex; justify-content: space-around; font-size: 9pt;">
-                    <div style="text-align: center; border-top: 1px solid #000; width: 170px; padding-top: 8px;">Firma del Conductor</div>
-                    <div style="text-align: center; border-top: 1px solid #000; width: 170px; padding-top: 8px;">Aclaración</div>
+                <div style="position: absolute; bottom: 35mm; left: 15mm; right: 15mm; display: flex; justify-content: space-around; font-size: 10pt;">
+                    <div style="text-align: center; border-top: 1px solid #000; width: 170px; padding-top: 10px;">Firma del Conductor</div>
+                    <div style="text-align: center; border-top: 1px solid #000; width: 170px; padding-top: 10px;">Aclaración</div>
                 </div>
             </div>
         </div>

@@ -8,6 +8,7 @@ let unidad = {};
 
 function aplicarValidacionEstricta(id) {
     const input = document.getElementById(id);
+    if (!input) return;
     input.addEventListener('input', () => {
         let val = input.value.toUpperCase();
         if (!"NO INFORMA".startsWith(val)) {
@@ -49,18 +50,13 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
     } else { document.getElementById('mensaje-error').innerText = "Unidad no encontrada."; }
 });
 
-const titulos = ["", "Paso 1: El Hecho", "Paso 2: Conductor", "Paso 3: Daños y Relato", "Paso 4: El Tercero", "Paso 5: Fotos"];
-
 function cambiarPaso(paso) {
     document.querySelectorAll('.step').forEach(s => s.classList.add('hidden'));
     document.getElementById(`step-${paso}`).classList.remove('hidden');
     document.getElementById('progress').style.width = (paso * 20) + "%";
-    document.getElementById('titulo-paso').innerText = titulos[paso];
-    
     const msg = document.getElementById('msg-obligatorio');
     if (paso === 5) msg.style.display = 'none';
     else msg.style.display = 'block';
-
     window.scrollTo(0,0);
 }
 
@@ -79,7 +75,7 @@ async function enviarSiniestro() {
     btn.innerText = "Enviando Denuncia..."; btn.disabled = true;
     const ts = Date.now();
     const folder = `${unidad.DOMINIO}_${ts}`;
-    const val = (id) => document.getElementById(id).value.trim().toUpperCase() || "NO INFORMA";
+    const val = (id) => document.getElementById(id) ? document.getElementById(id).value.trim().toUpperCase() : "NO INFORMA";
 
     try {
         const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
@@ -97,7 +93,7 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF
+        // POBLAR PDF (ID ÚNICO POR TS)
         document.getElementById('p-sini-id').innerText = ts.toString().slice(-6);
         document.getElementById('p-v-aseg').innerText = ""; 
         document.getElementById('p-v-pol').innerText = ""; 
@@ -141,7 +137,12 @@ async function enviarSiniestro() {
         } else { document.getElementById('p-t-p-no').innerText = val('nombre_chofer'); }
 
         document.getElementById('p-relato').innerText = val('descripcion');
-        document.getElementById('p-lista-fotos').innerHTML = links.map(l => `<p>${l}</p>`).join('');
+        
+        // FIX DE ERROR NULL
+        const fotoContainer = document.getElementById('p-lista-fotos');
+        if (fotoContainer) {
+            fotoContainer.innerHTML = links.length > 0 ? links.map(l => `<p>${l}</p>`).join('') : "<p>No se adjuntaron fotos.</p>";
+        }
 
         await new Promise(r => setTimeout(r, 1200)); 
         
