@@ -86,7 +86,8 @@ async function enviarSiniestro() {
         const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
         const links = [];
         
-        const catMap = {
+        // Mapeo estético de etiquetas de fotos según tu pedido
+        const catLabels = {
             'propios': 'daños',
             'tercero': 'daños_terc',
             'doc_cond': 'registro',
@@ -103,10 +104,11 @@ async function enviarSiniestro() {
                     headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': f[i].type },
                     body: f[i]
                 });
-                links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, name: `${catMap[c]}_${i+1}` });
+                links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, label: `${catLabels[c]}_${i+1}` });
             }
         }
 
+        // POBLAR PDF
         setVal('p-sini-id', ts.toString().slice(-6));
         setVal('p-v-aseg', ""); setVal('p-v-pol', ""); 
         setVal('p-fecha', val('fecha_hecho'));
@@ -144,6 +146,7 @@ async function enviarSiniestro() {
         setVal('p-t-dan', val('danos_tercero'));
         setVal('p-relato', val('descripcion'));
         
+        // Vaciado de Seccion 9 para completar manual
         setVal('p-denun-nom', ""); 
         setVal('p-denun-genero', "");
         setVal('p-denun-doc', "");
@@ -156,7 +159,7 @@ async function enviarSiniestro() {
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
             fotoContainer.innerHTML = links.length > 0 
-                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:12px;">• ${l.name}</a>`).join(' ') 
+                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:15px;">• ${l.label}</a>`).join(' ') 
                 : "No se adjuntaron fotos.";
         }
 

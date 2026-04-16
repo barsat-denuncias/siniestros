@@ -173,7 +173,7 @@
                 </div>
             </div>
 
-            <div style="height: 296mm; padding: 12mm 15mm; box-sizing: border-box; position: relative;">
+            <div style="height: 296mm; padding: 12mm 15mm; box-sizing: border-box; position: relative; display: flex; flex-direction: column;">
                 <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-bottom: 12px; font-size: 11pt;">6 &nbsp; DETALLE DEL OTRO VEHÍCULO</div>
                 <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 8px;">
                     <div><b>Propietario:</b> <span id="p-t-p-no"></span></div>
@@ -193,10 +193,10 @@
                 <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-top: 10px; margin-bottom: 10px; font-size: 11pt;">7 &nbsp; CARACTERÍSTICAS DEL SINIESTRO</div>
                 <div style="margin-bottom: 4px;"><b>Tipo de Accidente:</b> <span id="p-7-tipo"></span></div>
                 <div style="margin-bottom: 4px;"><b>Lugar:</b> <span id="p-7-lugar"></span></div>
-                <div style="margin-bottom: 12px;"><b>Colisión con:</b> <span id="p-7-colision"></span></div>
+                <div style="margin-bottom: 15px;"><b>Colisión con:</b> <span id="p-7-colision"></span></div>
 
                 <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-top: 10px; margin-bottom: 10px; font-size: 11pt;">8 &nbsp; CROQUIS Y RELATO</div>
-                <div style="display: flex; gap: 20px; align-items: flex-start; margin-top: 10px;">
+                <div style="display: flex; gap: 20px; align-items: flex-start; margin-top: 10px; margin-bottom: 25px;">
                     <div style="width: 170px; height: 170px; position: relative;">
                         <svg width="170" height="170" viewBox="0 0 100 100">
                             <line x1="43" y1="0" x2="43" y2="40" stroke="black" stroke-width="0.8"/>
@@ -220,9 +220,12 @@
                 </div>
 
                 <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-top: 15px; margin-bottom: 5px; font-size: 11pt;">REGISTRO FOTOGRÁFICO</div>
-                <div id="p-lista-fotos" style="font-size: 8pt; color: #444; margin-top: 5px; border-top: 1px solid #ccc; padding-top: 5px; line-height: 1.1;"></div>
+                <div id="p-lista-fotos" style="font-size: 8pt; color: #444; margin-top: 5px; border-top: 1px solid #ccc; padding-top: 5px; line-height: 1.1; margin-bottom: 25px;"></div>
 
-                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-top: 15px; margin-bottom: 10px; font-size: 11pt;">9 &nbsp; DATOS DEL DENUNCIANTE</div>
+                <div style="border-bottom: 1.5px solid #000; font-weight: bold; padding-bottom: 2px; margin-top: 15px; margin-bottom: 15px; font-size: 11pt;">9 &nbsp; DATOS DEL DENUNCIANTE</div>
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 4px; font-size: 8.5pt;">
+                    <div><b>¿Es el conductor o asegurado?</b> ASEGURADO</div>
+                </div>
                 <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 4px; font-size: 8.5pt;">
                     <div><b>Nombre y Apellido:</b> <span id="p-denun-nom"></span></div>
                     <div><b>Género:</b> <span id="p-denun-genero"></span></div>
@@ -241,11 +244,11 @@
                     <div><b>País:</b> ARGENTINA</div>
                 </div>
                 
-                <div style="margin-top: 25px; border-top: 1px solid #000; padding-top: 10px;">
-                    <p style="font-size: 8pt; margin-bottom: 60px;">Los datos consignados tienen carácter de declaración jurada.</p>
-                    <div style="display: flex; justify-content: space-around; font-size: 9.5pt;">
-                        <div style="text-align: center; border-top: 1px solid #000; width: 170px; padding-top: 5px;"><b>Firma</b></div>
-                        <div style="text-align: center; border-top: 1px solid #000; width: 170px; padding-top: 5px;"><b>Aclaración</b></div>
+                <div style="margin-top: auto; border-top: 1px solid #000; padding-top: 10px; margin-bottom: 10mm;">
+                    <p style="font-size: 8pt; margin-bottom: 50px;">Los datos consignados tienen carácter de declaración jurada.</p>
+                    <div style="display: flex; justify-content: space-around; font-size: 10pt;">
+                        <div style="text-align: center; border-top: 1.5px solid #000; width: 200px; padding-top: 8px;"><b>Firma</b></div>
+                        <div style="text-align: center; border-top: 1.5px solid #000; width: 200px; padding-top: 8px;"><b>Aclaración</b></div>
                     </div>
                 </div>
             </div>
