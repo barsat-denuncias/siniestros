@@ -6,7 +6,7 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 
-// Función auxiliar de seguridad para evitar el error de null
+// Función de seguridad blindada para IDs dinámicos
 function setVal(id, text) {
     const el = document.getElementById(id);
     if (el) el.innerText = text || "";
@@ -99,10 +99,9 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF USANDO ESCUDO DE SEGURIDAD
+        // POBLAR PDF
         setVal('p-sini-id', ts.toString().slice(-6));
-        setVal('p-v-aseg', ""); 
-        setVal('p-v-pol', ""); 
+        setVal('p-v-aseg', ""); setVal('p-v-pol', ""); 
         setVal('p-fecha', val('fecha_hecho'));
         setVal('p-hora', val('hora_hecho'));
         setVal('p-fecha-den', new Date().toLocaleDateString());
@@ -116,6 +115,9 @@ async function enviarSiniestro() {
         setVal('p-c-tel', val('tel_chofer'));
         setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer') + ", " + val('prov_chofer'));
         
+        setVal('p-aseg-razon', ""); setVal('p-aseg-cuit', "");
+        setVal('p-aseg-tel', ""); setVal('p-aseg-dom', ""); setVal('p-aseg-cp', "");
+
         setVal('p-v-do', unidad.DOMINIO);
         setVal('p-v-ma', "MERCEDES BENZ");
         setVal('p-v-mo', unidad.MODELO);
@@ -123,6 +125,9 @@ async function enviarSiniestro() {
         setVal('p-v-cha', unidad.CHASIS);
         setVal('p-v-dan', val('danos_propios'));
         
+        // SECCIÓN 7 CARACTERÍSTICAS
+        setVal('p-7-lugar', val('localidad') + ", " + val('provincia'));
+
         setVal('p-t-p-no', val('prop_nombre') || val('nombre_chofer'));
         setVal('p-t-p-dn', val('prop_dni'));
         setVal('p-t-p-te', val('prop_tel'));
@@ -134,6 +139,9 @@ async function enviarSiniestro() {
         setVal('p-t-dan', val('danos_tercero'));
         setVal('p-relato', val('descripcion'));
         
+        // SECCIÓN 9 DENUNCIANTE
+        setVal('p-denun-nom', ""); // Para completar luego con el asegurado real
+
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
             fotoContainer.innerHTML = links.length > 0 ? links.map(l => `<p>${l}</p>`).join('') : "<p>No se adjuntaron fotos.</p>";
