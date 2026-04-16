@@ -6,26 +6,20 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 
-// Validación Blindada Inteligente
 function aplicarValidacionEstricta(id) {
     const input = document.getElementById(id);
     input.addEventListener('input', () => {
         let val = input.value.toUpperCase();
         if (!"NO INFORMA".startsWith(val)) {
             input.value = val.replace(/[^0-9]/g, '');
-        } else {
-            input.value = val;
-        }
+        } else { input.value = val; }
     });
-
     input.addEventListener('blur', () => {
         let val = input.value.toUpperCase();
         if (val !== "" && val !== "NO INFORMA" && isNaN(val.replace(/\s/g,''))) {
             input.value = "";
             input.style.borderColor = "red";
-        } else {
-            input.style.borderColor = "#ddd";
-        }
+        } else { input.style.borderColor = "#ddd"; }
     });
 }
 
@@ -82,7 +76,7 @@ function validarYPasar(proximoPaso) {
 
 async function enviarSiniestro() {
     const btn = document.getElementById('btn-finalizar');
-    btn.innerText = "Procesando Denuncia..."; btn.disabled = true;
+    btn.innerText = "Enviando Denuncia..."; btn.disabled = true;
     const ts = Date.now();
     const folder = `${unidad.DOMINIO}_${ts}`;
     const val = (id) => document.getElementById(id).value.trim().toUpperCase() || "NO INFORMA";
@@ -103,11 +97,10 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF LIMPIO (SIN DATOS FIJOS)
+        // POBLAR PDF
         document.getElementById('p-sini-id').innerText = ts.toString().slice(-6);
-        document.getElementById('p-v-aseg').innerText = ""; // Aseguradora vacía por ahora
-        document.getElementById('p-v-pol').innerText = ""; // Póliza vacía por ahora
-        
+        document.getElementById('p-v-aseg').innerText = ""; 
+        document.getElementById('p-v-pol').innerText = ""; 
         document.getElementById('p-fecha').innerText = val('fecha_hecho');
         document.getElementById('p-hora').innerText = val('hora_hecho');
         document.getElementById('p-fecha-den').innerText = new Date().toLocaleDateString();
@@ -121,7 +114,6 @@ async function enviarSiniestro() {
         document.getElementById('p-c-tel').innerText = val('tel_chofer');
         document.getElementById('p-c-dom').innerText = `${val('domicilio_chofer')}, ${val('loc_chofer')}, ${val('prov_chofer')}`;
         
-        // Datos del Asegurado vacíos (Sección 4)
         document.getElementById('p-aseg-razon').innerText = ""; 
         document.getElementById('p-aseg-cuit').innerText = "";
         document.getElementById('p-aseg-tel').innerText = "";
