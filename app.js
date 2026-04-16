@@ -103,8 +103,11 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF
+        // POBLAR PDF LIMPIO (SIN DATOS FIJOS)
         document.getElementById('p-sini-id').innerText = ts.toString().slice(-6);
+        document.getElementById('p-v-aseg').innerText = ""; // Aseguradora vacía por ahora
+        document.getElementById('p-v-pol').innerText = ""; // Póliza vacía por ahora
+        
         document.getElementById('p-fecha').innerText = val('fecha_hecho');
         document.getElementById('p-hora').innerText = val('hora_hecho');
         document.getElementById('p-fecha-den').innerText = new Date().toLocaleDateString();
@@ -118,18 +121,23 @@ async function enviarSiniestro() {
         document.getElementById('p-c-tel').innerText = val('tel_chofer');
         document.getElementById('p-c-dom').innerText = `${val('domicilio_chofer')}, ${val('loc_chofer')}, ${val('prov_chofer')}`;
         
+        // Datos del Asegurado vacíos (Sección 4)
+        document.getElementById('p-aseg-razon').innerText = ""; 
+        document.getElementById('p-aseg-cuit').innerText = "";
+        document.getElementById('p-aseg-tel').innerText = "";
+        document.getElementById('p-aseg-dom').innerText = "";
+        document.getElementById('p-aseg-cp').innerText = "";
+
         document.getElementById('p-v-do').innerText = unidad.DOMINIO;
-        document.getElementById('p-v-ma').innerText = "MERCEDES BENZ";
+        document.getElementById('p-v-ma').innerText = unidad.MODELO || "";
         document.getElementById('p-v-mo').innerText = unidad.MODELO;
         document.getElementById('p-v-ti').innerText = unidad.VEHICULO;
         document.getElementById('p-v-cha').innerText = unidad.CHASIS;
-        
-        // DAÑOS INTEGRADOS EN SECCIÓN 5
         document.getElementById('p-v-dan').innerText = val('danos_propios');
         
         document.getElementById('p-t-do').innerText = val('patente_tercero');
         document.getElementById('p-t-ma').innerText = val('marca_tercero');
-        document.getElementById('p-t-mo').innerText = val('marca_tercero'); // Usado para modelo tercero
+        document.getElementById('p-t-mo').innerText = val('marca_tercero');
         document.getElementById('p-t-se').innerText = val('seguro_tercero');
         document.getElementById('p-t-po').innerText = val('poliza_tercero');
         document.getElementById('p-t-dan').innerText = val('danos_tercero');
