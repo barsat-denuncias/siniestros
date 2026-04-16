@@ -85,6 +85,16 @@ async function enviarSiniestro() {
     try {
         const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
         const links = [];
+        
+        // Mapeo de nombres estéticos para las fotos
+        const catMap = {
+            'propios': 'daños',
+            'tercero': 'daños_terc',
+            'doc_cond': 'registro',
+            'doc_terc': 'registro_terc',
+            'otros': 'otros'
+        };
+
         for (const c of cats) {
             const f = document.getElementById(`f_${c}`).files;
             for (let i = 0; i < f.length; i++) {
@@ -94,10 +104,11 @@ async function enviarSiniestro() {
                     headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': f[i].type },
                     body: f[i]
                 });
-                links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, name: `${c}_${i}.jpg` });
+                links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, name: `${catMap[c]}_${i+1}` });
             }
         }
 
+        // POBLAR PDF
         setVal('p-sini-id', ts.toString().slice(-6));
         setVal('p-v-aseg', ""); setVal('p-v-pol', ""); 
         setVal('p-fecha', val('fecha_hecho'));
@@ -113,6 +124,9 @@ async function enviarSiniestro() {
         setVal('p-c-tel', val('tel_chofer'));
         setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer') + ", " + val('prov_chofer'));
         
+        setVal('p-aseg-razon', ""); setVal('p-aseg-cuit', "");
+        setVal('p-aseg-tel', ""); setVal('p-aseg-dom', ""); setVal('p-aseg-cp', "");
+
         setVal('p-v-do', unidad.DOMINIO);
         setVal('p-v-ma', "MERCEDES BENZ");
         setVal('p-v-mo', unidad.MODELO);
@@ -120,7 +134,6 @@ async function enviarSiniestro() {
         setVal('p-v-cha', unidad.CHASIS);
         setVal('p-v-dan', val('danos_propios'));
         
-        // SECCIÓN 7 VACÍA COMO PEDISTE
         setVal('p-7-tipo', "");
         setVal('p-7-lugar', val('localidad') + ", " + val('provincia'));
         setVal('p-7-colision', "");
@@ -136,13 +149,20 @@ async function enviarSiniestro() {
         setVal('p-t-dan', val('danos_tercero'));
         setVal('p-relato', val('descripcion'));
         
+        // POBLAR SECCIÓN 9 COMPLETA
         setVal('p-denun-nom', ""); 
+        setVal('p-denun-genero', "");
+        setVal('p-denun-doc', "");
+        setVal('p-denun-tel', "");
+        setVal('p-denun-dom', "");
+        setVal('p-denun-cp', "");
+        setVal('p-denun-loc', "");
+        setVal('p-denun-prov', "");
 
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
-            // LINKS ACORTADOS Y COMPACTOS
             fotoContainer.innerHTML = links.length > 0 
-                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:10px;">• ${l.name}</a>`).join(' ') 
+                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:12px;">• ${l.name}</a>`).join(' ') 
                 : "No se adjuntaron fotos.";
         }
 
