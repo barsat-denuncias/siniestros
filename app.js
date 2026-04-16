@@ -6,6 +6,8 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 
+const titulos = ["", "Paso 1: Lugar y Fecha", "Paso 2: Conductor", "Paso 3: Daños y Relato", "Paso 4: El Tercero", "Paso 5: Fotos"];
+
 function setVal(id, text) {
     const el = document.getElementById(id);
     if (el) el.innerText = text || "";
@@ -59,6 +61,10 @@ function cambiarPaso(paso) {
     document.querySelectorAll('.step').forEach(s => s.classList.add('hidden'));
     document.getElementById(`step-${paso}`).classList.remove('hidden');
     document.getElementById('progress').style.width = (paso * 20) + "%";
+    
+    // FIX DE TÍTULOS DE PASOS
+    document.getElementById('titulo-paso').innerText = titulos[paso];
+    
     const msg = document.getElementById('msg-obligatorio');
     if (paso === 5) msg.style.display = 'none';
     else msg.style.display = 'block';
@@ -85,15 +91,7 @@ async function enviarSiniestro() {
     try {
         const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
         const links = [];
-        
-        // Mapeo estético de etiquetas de fotos según tu pedido
-        const catLabels = {
-            'propios': 'daños',
-            'tercero': 'daños_terc',
-            'doc_cond': 'registro',
-            'doc_terc': 'registro_terc',
-            'otros': 'otros'
-        };
+        const catLabels = { 'propios': 'daños', 'tercero': 'daños_terc', 'doc_cond': 'registro', 'doc_terc': 'registro_terc', 'otros': 'otros' };
 
         for (const c of cats) {
             const f = document.getElementById(`f_${c}`).files;
@@ -108,7 +106,6 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF
         setVal('p-sini-id', ts.toString().slice(-6));
         setVal('p-v-aseg', ""); setVal('p-v-pol', ""); 
         setVal('p-fecha', val('fecha_hecho'));
@@ -146,7 +143,6 @@ async function enviarSiniestro() {
         setVal('p-t-dan', val('danos_tercero'));
         setVal('p-relato', val('descripcion'));
         
-        // Vaciado de Seccion 9 para completar manual
         setVal('p-denun-nom', ""); 
         setVal('p-denun-genero', "");
         setVal('p-denun-doc', "");
