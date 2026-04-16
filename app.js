@@ -6,7 +6,6 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 
-// Función de seguridad blindada para IDs dinámicos
 function setVal(id, text) {
     const el = document.getElementById(id);
     if (el) el.innerText = text || "";
@@ -95,11 +94,10 @@ async function enviarSiniestro() {
                     headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': f[i].type },
                     body: f[i]
                 });
-                links.push(`${URL_API}/storage/v1/object/public/denuncias/${path}`);
+                links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, name: `${c}_${i}.jpg` });
             }
         }
 
-        // POBLAR PDF
         setVal('p-sini-id', ts.toString().slice(-6));
         setVal('p-v-aseg', ""); setVal('p-v-pol', ""); 
         setVal('p-fecha', val('fecha_hecho'));
@@ -115,9 +113,6 @@ async function enviarSiniestro() {
         setVal('p-c-tel', val('tel_chofer'));
         setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer') + ", " + val('prov_chofer'));
         
-        setVal('p-aseg-razon', ""); setVal('p-aseg-cuit', "");
-        setVal('p-aseg-tel', ""); setVal('p-aseg-dom', ""); setVal('p-aseg-cp', "");
-
         setVal('p-v-do', unidad.DOMINIO);
         setVal('p-v-ma', "MERCEDES BENZ");
         setVal('p-v-mo', unidad.MODELO);
@@ -125,8 +120,10 @@ async function enviarSiniestro() {
         setVal('p-v-cha', unidad.CHASIS);
         setVal('p-v-dan', val('danos_propios'));
         
-        // SECCIÓN 7 CARACTERÍSTICAS
+        // SECCIÓN 7 VACÍA COMO PEDISTE
+        setVal('p-7-tipo', "");
         setVal('p-7-lugar', val('localidad') + ", " + val('provincia'));
+        setVal('p-7-colision', "");
 
         setVal('p-t-p-no', val('prop_nombre') || val('nombre_chofer'));
         setVal('p-t-p-dn', val('prop_dni'));
@@ -139,12 +136,14 @@ async function enviarSiniestro() {
         setVal('p-t-dan', val('danos_tercero'));
         setVal('p-relato', val('descripcion'));
         
-        // SECCIÓN 9 DENUNCIANTE
-        setVal('p-denun-nom', ""); // Para completar luego con el asegurado real
+        setVal('p-denun-nom', ""); 
 
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
-            fotoContainer.innerHTML = links.length > 0 ? links.map(l => `<p>${l}</p>`).join('') : "<p>No se adjuntaron fotos.</p>";
+            // LINKS ACORTADOS Y COMPACTOS
+            fotoContainer.innerHTML = links.length > 0 
+                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:10px;">• ${l.name}</a>`).join(' ') 
+                : "No se adjuntaron fotos.";
         }
 
         await new Promise(r => setTimeout(r, 1200)); 
