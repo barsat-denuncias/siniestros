@@ -6,6 +6,12 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 
+// Función auxiliar de seguridad para evitar el error de null
+function setVal(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.innerText = text || "";
+}
+
 function aplicarValidacionEstricta(id) {
     const input = document.getElementById(id);
     if (!input) return;
@@ -72,7 +78,7 @@ function validarYPasar(proximoPaso) {
 
 async function enviarSiniestro() {
     const btn = document.getElementById('btn-finalizar');
-    btn.innerText = "Enviando Denuncia..."; btn.disabled = true;
+    btn.innerText = "Enviando..."; btn.disabled = true;
     const ts = Date.now();
     const folder = `${unidad.DOMINIO}_${ts}`;
     const val = (id) => document.getElementById(id) ? document.getElementById(id).value.trim().toUpperCase() : "NO INFORMA";
@@ -93,50 +99,40 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF (ID ÚNICO POR TS)
-        document.getElementById('p-sini-id').innerText = ts.toString().slice(-6);
-        document.getElementById('p-v-aseg').innerText = ""; 
-        document.getElementById('p-v-pol').innerText = ""; 
-        document.getElementById('p-fecha').innerText = val('fecha_hecho');
-        document.getElementById('p-hora').innerText = val('hora_hecho');
-        document.getElementById('p-fecha-den').innerText = new Date().toLocaleDateString();
-        document.getElementById('p-cp').innerText = val('cp');
-        document.getElementById('p-prov').innerText = val('provincia');
-        document.getElementById('p-loc').innerText = val('localidad');
-        document.getElementById('p-calle').innerText = val('calle');
-        document.getElementById('p-int').innerText = val('interseccion');
-        document.getElementById('p-c-nom').innerText = val('nombre_chofer');
-        document.getElementById('p-c-dni').innerText = val('dni_chofer');
-        document.getElementById('p-c-tel').innerText = val('tel_chofer');
-        document.getElementById('p-c-dom').innerText = `${val('domicilio_chofer')}, ${val('loc_chofer')}, ${val('prov_chofer')}`;
+        // POBLAR PDF USANDO ESCUDO DE SEGURIDAD
+        setVal('p-sini-id', ts.toString().slice(-6));
+        setVal('p-v-aseg', ""); 
+        setVal('p-v-pol', ""); 
+        setVal('p-fecha', val('fecha_hecho'));
+        setVal('p-hora', val('hora_hecho'));
+        setVal('p-fecha-den', new Date().toLocaleDateString());
+        setVal('p-cp', val('cp'));
+        setVal('p-prov', val('provincia'));
+        setVal('p-loc', val('localidad'));
+        setVal('p-calle', val('calle'));
+        setVal('p-int', val('interseccion'));
+        setVal('p-c-nom', val('nombre_chofer'));
+        setVal('p-c-dni', val('dni_chofer'));
+        setVal('p-c-tel', val('tel_chofer'));
+        setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer') + ", " + val('prov_chofer'));
         
-        document.getElementById('p-aseg-razon').innerText = ""; 
-        document.getElementById('p-aseg-cuit').innerText = "";
-        document.getElementById('p-aseg-tel').innerText = "";
-        document.getElementById('p-aseg-dom').innerText = "";
-        document.getElementById('p-aseg-cp').innerText = "";
-
-        document.getElementById('p-v-do').innerText = unidad.DOMINIO;
-        document.getElementById('p-v-ma').innerText = unidad.MODELO || "";
-        document.getElementById('p-v-mo').innerText = unidad.MODELO;
-        document.getElementById('p-v-ti').innerText = unidad.VEHICULO;
-        document.getElementById('p-v-cha').innerText = unidad.CHASIS;
-        document.getElementById('p-v-dan').innerText = val('danos_propios');
+        setVal('p-v-do', unidad.DOMINIO);
+        setVal('p-v-ma', "MERCEDES BENZ");
+        setVal('p-v-mo', unidad.MODELO);
+        setVal('p-v-ti', unidad.VEHICULO);
+        setVal('p-v-cha', unidad.CHASIS);
+        setVal('p-v-dan', val('danos_propios'));
         
-        document.getElementById('p-t-do').innerText = val('patente_tercero');
-        document.getElementById('p-t-ma').innerText = val('marca_tercero');
-        document.getElementById('p-t-mo').innerText = val('marca_tercero');
-        document.getElementById('p-t-se').innerText = val('seguro_tercero');
-        document.getElementById('p-t-po').innerText = val('poliza_tercero');
-        document.getElementById('p-t-dan').innerText = val('danos_tercero');
-
-        if(document.getElementById('es_propietario').value === 'NO'){
-            document.getElementById('p-t-p-no').innerText = val('prop_nombre');
-            document.getElementById('p-t-p-dn').innerText = val('prop_dni');
-            document.getElementById('p-t-p-te').innerText = val('prop_tel');
-        } else { document.getElementById('p-t-p-no').innerText = val('nombre_chofer'); }
-
-        document.getElementById('p-relato').innerText = val('descripcion');
+        setVal('p-t-p-no', val('prop_nombre') || val('nombre_chofer'));
+        setVal('p-t-p-dn', val('prop_dni'));
+        setVal('p-t-p-te', val('prop_tel'));
+        setVal('p-t-ma', val('marca_tercero'));
+        setVal('p-t-mo', val('marca_tercero'));
+        setVal('p-t-do', val('patente_tercero'));
+        setVal('p-t-se', val('seguro_tercero'));
+        setVal('p-t-po', val('poliza_tercero'));
+        setVal('p-t-dan', val('danos_tercero'));
+        setVal('p-relato', val('descripcion'));
         
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
@@ -144,28 +140,13 @@ async function enviarSiniestro() {
         }
 
         await new Promise(r => setTimeout(r, 1200)); 
-        
-        const opt = {
-            margin: 0,
-            filename: `Denuncia_${unidad.DOMINIO}.pdf`,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
-            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-
+        const opt = { margin: 0, filename: `Denuncia_${unidad.DOMINIO}.pdf`, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
         const pdfBlob = await html2pdf().set(opt).from(document.getElementById('pdf-template')).output('blob');
 
-        const pdfPath = `${folder}/Denuncia_Barsat_Final.pdf`;
-        await fetch(`${URL_API}/storage/v1/object/denuncias/${pdfPath}`, {
-            method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/pdf' }, body: pdfBlob
-        });
-
+        const pdfPath = `${folder}/Denuncia_Final.pdf`;
+        await fetch(`${URL_API}/storage/v1/object/denuncias/${pdfPath}`, { method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/pdf' }, body: pdfBlob });
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
-        await fetch(`${URL_API}/rest/v1/Siniestros`, {
-            method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fecha_hecho: val('fecha_hecho'), nombre_chofer: val('nombre_chofer'), link_pdf: linkFinal, dominio_nuestro: unidad.DOMINIO })
-        });
-
+        await fetch(`${URL_API}/rest/v1/Siniestros`, { method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ fecha_hecho: val('fecha_hecho'), nombre_chofer: val('nombre_chofer'), link_pdf: linkFinal, dominio_nuestro: unidad.DOMINIO }) });
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
         alert("¡ÉXITO! Denuncia cargada correctamente.");
         location.reload();
