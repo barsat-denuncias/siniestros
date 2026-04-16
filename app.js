@@ -86,7 +86,6 @@ async function enviarSiniestro() {
         const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
         const links = [];
         
-        // Mapeo de nombres estéticos para las fotos
         const catMap = {
             'propios': 'daños',
             'tercero': 'daños_terc',
@@ -108,7 +107,6 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF
         setVal('p-sini-id', ts.toString().slice(-6));
         setVal('p-v-aseg', ""); setVal('p-v-pol', ""); 
         setVal('p-fecha', val('fecha_hecho'));
@@ -124,9 +122,6 @@ async function enviarSiniestro() {
         setVal('p-c-tel', val('tel_chofer'));
         setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer') + ", " + val('prov_chofer'));
         
-        setVal('p-aseg-razon', ""); setVal('p-aseg-cuit', "");
-        setVal('p-aseg-tel', ""); setVal('p-aseg-dom', ""); setVal('p-aseg-cp', "");
-
         setVal('p-v-do', unidad.DOMINIO);
         setVal('p-v-ma', "MERCEDES BENZ");
         setVal('p-v-mo', unidad.MODELO);
@@ -149,7 +144,6 @@ async function enviarSiniestro() {
         setVal('p-t-dan', val('danos_tercero'));
         setVal('p-relato', val('descripcion'));
         
-        // POBLAR SECCIÓN 9 COMPLETA
         setVal('p-denun-nom', ""); 
         setVal('p-denun-genero', "");
         setVal('p-denun-doc', "");
