@@ -138,7 +138,6 @@ async function enviarSiniestro() {
 
         document.getElementById('p-relato').innerText = val('descripcion');
         
-        // FIX DE ERROR NULL
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
             fotoContainer.innerHTML = links.length > 0 ? links.map(l => `<p>${l}</p>`).join('') : "<p>No se adjuntaron fotos.</p>";
