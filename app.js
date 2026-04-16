@@ -11,7 +11,6 @@ function aplicarValidacionEstricta(id) {
     const input = document.getElementById(id);
     input.addEventListener('input', () => {
         let val = input.value.toUpperCase();
-        // Si no es parte de la frase "NO INFORMA", solo permitimos números
         if (!"NO INFORMA".startsWith(val)) {
             input.value = val.replace(/[^0-9]/g, '');
         } else {
@@ -21,7 +20,6 @@ function aplicarValidacionEstricta(id) {
 
     input.addEventListener('blur', () => {
         let val = input.value.toUpperCase();
-        // Si no es "NO INFORMA" y no es número puro, borramos
         if (val !== "" && val !== "NO INFORMA" && isNaN(val.replace(/\s/g,''))) {
             input.value = "";
             input.style.borderColor = "red";
@@ -65,7 +63,6 @@ function cambiarPaso(paso) {
     document.getElementById('progress').style.width = (paso * 20) + "%";
     document.getElementById('titulo-paso').innerText = titulos[paso];
     
-    // Leyenda obligatoria solo para pasos 1 al 4
     const msg = document.getElementById('msg-obligatorio');
     if (paso === 5) msg.style.display = 'none';
     else msg.style.display = 'block';
@@ -120,14 +117,19 @@ async function enviarSiniestro() {
         document.getElementById('p-c-dni').innerText = val('dni_chofer');
         document.getElementById('p-c-tel').innerText = val('tel_chofer');
         document.getElementById('p-c-dom').innerText = `${val('domicilio_chofer')}, ${val('loc_chofer')}, ${val('prov_chofer')}`;
+        
         document.getElementById('p-v-do').innerText = unidad.DOMINIO;
         document.getElementById('p-v-ma').innerText = "MERCEDES BENZ";
         document.getElementById('p-v-mo').innerText = unidad.MODELO;
         document.getElementById('p-v-ti').innerText = unidad.VEHICULO;
         document.getElementById('p-v-cha').innerText = unidad.CHASIS;
+        
+        // DAÑOS INTEGRADOS EN SECCIÓN 5
         document.getElementById('p-v-dan').innerText = val('danos_propios');
+        
         document.getElementById('p-t-do').innerText = val('patente_tercero');
         document.getElementById('p-t-ma').innerText = val('marca_tercero');
+        document.getElementById('p-t-mo').innerText = val('marca_tercero'); // Usado para modelo tercero
         document.getElementById('p-t-se').innerText = val('seguro_tercero');
         document.getElementById('p-t-po').innerText = val('poliza_tercero');
         document.getElementById('p-t-dan').innerText = val('danos_tercero');
@@ -143,7 +145,6 @@ async function enviarSiniestro() {
 
         await new Promise(r => setTimeout(r, 1200)); 
         
-        // CONFIGURACIÓN DE PDF BLINDADA PARA A4
         const opt = {
             margin: 0,
             filename: `Denuncia_${unidad.DOMINIO}.pdf`,
@@ -166,7 +167,7 @@ async function enviarSiniestro() {
         });
 
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
-        alert("¡ÉXITO! Denuncia cargada. Verificá el PDF de 3 hojas.");
+        alert("¡ÉXITO! Denuncia cargada correctamente.");
         location.reload();
     } catch (e) { alert("Error crítico: " + e.message); btn.disabled = false; btn.innerText = "Finalizar Denuncia"; }
 }
