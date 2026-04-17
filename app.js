@@ -62,7 +62,7 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
                 datosEmpresa = dataE[0];
             } else { datosEmpresa = {}; }
 
-            // LOGICA NRO SINIESTRO SN1, SN2...
+            // CORRECCIÓN LÓGICA SN (Basado en SELECT policy y columna TEXT)
             const resS = await fetch(`${URL_API}/rest/v1/Siniestros?select=nro_siniestro&order=id.desc&limit=1`, {
                 headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
             });
