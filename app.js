@@ -6,7 +6,7 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 let datosEmpresa = {};
-let nroSiniestroFinal = "SN-100000"; // Formato AON solicitado
+let nroSiniestroFinal = "SN1"; 
 
 const titulos = ["", "Paso 1: Lugar y Fecha", "Paso 2: Conductor", "Paso 3: Daños y Relato", "Paso 4: El Tercero", "Paso 5: Fotos"];
 
@@ -40,7 +40,6 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
     e.preventDefault();
     const btn = e.target.querySelector('button');
     btn.innerText = "Buscando..."; btn.disabled = true;
-
     const patente = document.getElementById('patente').value.trim().toUpperCase();
     const chasis = document.getElementById('chasis_val').value.trim();
 
@@ -52,25 +51,20 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
 
         if (dataU.length > 0) {
             unidad = dataU[0];
-            
-            // BUSCAR EMPRESA: Aseguramos que busque por la columna RAZON_SOCIAL del camión
             const resEmpresa = await fetch(`${URL_API}/rest/v1/Empresas?nombre_clave=eq.${unidad.RAZON_SOCIAL}`, {
                 headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
             });
             const dataE = await resEmpresa.json();
             if (dataE.length > 0) { datosEmpresa = dataE[0]; }
 
-            // NÚMERO DE SINIESTRO REAL
             const resSini = await fetch(`${URL_API}/rest/v1/Siniestros?select=nro_siniestro&order=nro_siniestro.desc&limit=1`, {
                 headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
             });
             const dataS = await resSini.json();
             if (dataS.length > 0 && dataS[0].nro_siniestro) {
-                const numericPart = parseInt(dataS[0].nro_siniestro.split('-')[1]) || 100000;
-                nroSiniestroFinal = `SN-${numericPart + 1}`;
-            } else {
-                nroSiniestroFinal = "SN-100001"; // Inicio real
-            }
+                const lastNum = parseInt(dataS[0].nro_siniestro.replace('SN', '')) || 0;
+                nroSiniestroFinal = `SN${lastNum + 1}`;
+            } else { nroSiniestroFinal = "SN1"; }
 
             document.getElementById('pantalla-validacion').classList.add('hidden');
             document.getElementById('pantalla-formulario').classList.remove('hidden');
@@ -124,61 +118,23 @@ async function enviarSiniestro() {
 
         // POBLAR PDF
         setVal('p-sini-id', nroSiniestroFinal);
-        setVal('p-v-aseg', unidad.ASEGURADORA); 
-        setVal('p-v-pol', unidad.POLIZA); 
-        setVal('p-fecha', val('fecha_hecho'));
-        setVal('p-hora', val('hora_hecho'));
+        setVal('p-v-aseg', unidad.ASEGURADORA); setVal('p-v-pol', unidad.POLIZA); 
+        setVal('p-fecha', val('fecha_hecho')); setVal('p-hora', val('hora_hecho'));
         setVal('p-fecha-den', new Date().toLocaleDateString());
-        setVal('p-cp', val('cp'));
-        setVal('p-prov', val('provincia'));
-        setVal('p-loc', val('localidad'));
-        setVal('p-calle', val('calle'));
-        setVal('p-int', val('interseccion'));
-        
-        setVal('p-c-nom', val('nombre_chofer'));
-        setVal('p-c-dni', val('dni_chofer'));
-        setVal('p-c-tel', val('tel_chofer'));
-        setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer'));
-        
-        // DATOS ASEGURADO AUTOMÁTICOS
+        setVal('p-cp', val('cp')); setVal('p-prov', val('provincia'));
+        setVal('p-loc', val('localidad')); setVal('p-calle', val('calle')); setVal('p-int', val('interseccion'));
+        setVal('p-c-nom', val('nombre_chofer')); setVal('p-c-dni', val('dni_chofer'));
+        setVal('p-c-tel', val('tel_chofer')); setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer'));
         setVal('p-aseg-razon', datosEmpresa.razon_social_completa || unidad.RAZON_SOCIAL);
-        setVal('p-aseg-cuit', datosEmpresa.cuit);
-        setVal('p-aseg-tel', datosEmpresa.telefono);
-        setVal('p-aseg-dom', datosEmpresa.domicilio);
-        setVal('p-aseg-cp', datosEmpresa.cp);
-
-        // VEHÍCULO
-        setVal('p-v-do', unidad.DOMINIO);
-        setVal('p-v-ma', unidad.MODELO.includes("MERCEDES") ? "MERCEDES BENZ" : "CITROEN");
-        setVal('p-v-mo', unidad.MODELO);
-        
-        // Lógica de Tipo: si no es CAMION, poner PARTICULAR
-        const tipoLimpio = (unidad.VEHICULO === "SOCIOS" || unidad.VEHICULO === "UTILITARIO") ? "PARTICULAR" : unidad.VEHICULO;
-        setVal('p-v-ti', tipoLimpio);
-        
-        setVal('p-v-anio', unidad.ANIO);
-        setVal('p-v-mot', unidad.MOTOR); // Buscando columna MOTOR
-        setVal('p-v-cha', unidad.CHASIS);
-        setVal('p-v-dan', val('danos_propios'));
-        
+        setVal('p-aseg-cuit', datosEmpresa.cuit); setVal('p-aseg-tel', datosEmpresa.telefono);
+        setVal('p-aseg-dom', datosEmpresa.domicilio); setVal('p-aseg-cp', datosEmpresa.cp);
+        setVal('p-v-do', unidad.DOMINIO); setVal('p-v-mo', unidad.MODELO);
+        setVal('p-v-anio', unidad.ANIO); setVal('p-v-mot', unidad.MOTOR); setVal('p-v-cha', unidad.CHASIS);
+        setVal('p-v-dan', val('danos_propios')); setVal('p-relato', val('descripcion'));
         setVal('p-t-p-no', val('prop_nombre') || val('nombre_chofer'));
-        setVal('p-t-p-dn', val('prop_dni'));
-        setVal('p-t-ma', val('marca_tercero'));
-        setVal('p-t-mo', val('marca_tercero'));
-        setVal('p-t-do', val('patente_tercero'));
-        setVal('p-t-se', val('seguro_tercero'));
-        setVal('p-t-po', val('poliza_tercero'));
+        setVal('p-t-p-dn', val('prop_dni')); setVal('p-t-do', val('patente_tercero'));
+        setVal('p-t-se', val('seguro_tercero')); setVal('p-t-po', val('poliza_tercero'));
         setVal('p-t-dan', val('danos_tercero'));
-        setVal('p-relato', val('descripcion'));
-        
-        setVal('p-denun-nom', datosEmpresa.razon_social_completa || val('nombre_chofer')); 
-        setVal('p-denun-genero', "Persona Jurídica");
-        setVal('p-denun-doc', "CUIT " + datosEmpresa.cuit);
-        setVal('p-denun-tel', datosEmpresa.telefono);
-        setVal('p-denun-dom', datosEmpresa.domicilio);
-        setVal('p-denun-cp', datosEmpresa.cp);
-        setVal('p-denun-loc', datosEmpresa.localidad);
-        setVal('p-denun-prov', datosEmpresa.provincia);
 
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
@@ -195,9 +151,39 @@ async function enviarSiniestro() {
         await fetch(`${URL_API}/storage/v1/object/denuncias/${pdfPath}`, { method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/pdf' }, body: pdfBlob });
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
         
-        await fetch(`${URL_API}/rest/v1/Siniestros`, { method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ fecha_hecho: val('fecha_hecho'), nombre_chofer: val('nombre_chofer'), link_pdf: linkFinal, dominio_nuestro: unidad.DOMINIO, nro_siniestro: nroSiniestroFinal }) });
+        // ENVÍO DE DATOS COMPLETO A SUPABASE
+        await fetch(`${URL_API}/rest/v1/Siniestros`, { 
+            method: 'POST', 
+            headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ 
+                fecha_hecho: val('fecha_hecho'), 
+                nombre_chofer: val('nombre_chofer'), 
+                dni_chofer: val('dni_chofer'),
+                tel_chofer: val('tel_chofer'),
+                domicilio_chofer: val('domicilio_chofer'),
+                link_pdf: linkFinal, 
+                dominio_nuestro: unidad.DOMINIO, 
+                nro_siniestro: nroSiniestroFinal,
+                provincia: val('provincia'),
+                localidad: val('localidad'),
+                cp: val('cp'),
+                calle: val('calle'),
+                interseccion: val('interseccion'),
+                danos_propios: val('danos_propios'),
+                descripcion: val('descripcion'),
+                patente_tercero: val('patente_tercero'),
+                marca_tercero: val('marca_tercero'),
+                seguro_tercero: val('seguro_tercero'),
+                poliza_tercero: val('poliza_tercero'),
+                danos_tercero: val('danos_tercero'),
+                prop_nombre: val('prop_nombre'),
+                prop_dni: val('prop_dni'),
+                prop_tel: val('prop_tel')
+            }) 
+        });
+
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
-        alert("¡ÉXITO! Denuncia cargada correctamente.");
+        alert("¡ÉXITO! Denuncia SN: " + nroSiniestroFinal);
         location.reload();
     } catch (e) { alert("Error crítico: " + e.message); btn.disabled = false; btn.innerText = "Finalizar Denuncia"; }
 }
