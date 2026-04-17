@@ -53,7 +53,6 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
             unidad = dataU[0];
             const claveEmpresa = unidad.RAZON_SOCIAL.toUpperCase().trim(); 
 
-            // BUSQUEDA ROBUSTA EN EMPRESAS
             const resE = await fetch(`${URL_API}/rest/v1/Empresas?nombre_clave=eq.${claveEmpresa}`, {
                 headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
             });
@@ -62,7 +61,7 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
                 datosEmpresa = dataE[0];
             } else { datosEmpresa = {}; }
 
-            // CORRECCIÓN LÓGICA SN (Basado en SELECT policy y columna TEXT)
+            // LÓGICA SN: BUSCA EL ÚLTIMO ID CARGADO PARA SUMAR +1
             const resS = await fetch(`${URL_API}/rest/v1/Siniestros?select=nro_siniestro&order=id.desc&limit=1`, {
                 headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
             });
@@ -123,7 +122,7 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF
+        // LLENAR PDF
         setVal('p-sini-id', nroSiniestroFinal);
         setVal('p-v-aseg', unidad.ASEGURADORA); setVal('p-v-pol', unidad.POLIZA); 
         setVal('p-fecha', val('fecha_hecho')); setVal('p-hora', val('hora_hecho'));
@@ -131,25 +130,16 @@ async function enviarSiniestro() {
         setVal('p-loc', val('localidad')); setVal('p-prov', val('provincia'));
         setVal('p-calle', val('calle')); setVal('p-int', val('interseccion'));
         
-        // Datos Asegurado DESDE TABLA EMPRESAS
         setVal('p-aseg-razon', datosEmpresa.razon_social_completa || unidad.RAZON_SOCIAL);
-        setVal('p-aseg-cuit', datosEmpresa.cuit);
-        setVal('p-aseg-tel', datosEmpresa.telefono);
-        setVal('p-aseg-dom', datosEmpresa.domicilio);
-        setVal('p-aseg-cp', datosEmpresa.cp);
+        setVal('p-aseg-cuit', datosEmpresa.cuit); setVal('p-aseg-tel', datosEmpresa.telefono);
+        setVal('p-aseg-dom', datosEmpresa.domicilio); setVal('p-aseg-cp', datosEmpresa.cp);
 
-        // Vehículo (Evitar duplicado de Marca)
         let m = unidad.MODELO || "";
-        let marcaFinal = "";
-        if (m.includes("MERCEDES")) marcaFinal = "MERCEDES BENZ";
-        else if (m.includes("CITROEN")) marcaFinal = "CITROEN";
-        else marcaFinal = m.split(' ')[0];
-        setVal('p-v-ma', marcaFinal);
-        setVal('p-v-mo', m);
+        let marcaFinal = (m.includes("MERCEDES") || m.includes("BENZ")) ? "MERCEDES BENZ" : (m.includes("CITROEN") ? "CITROEN" : m.split(' ')[0]);
+        setVal('p-v-ma', marcaFinal); setVal('p-v-mo', m);
         setVal('p-v-do', unidad.DOMINIO); setVal('p-v-anio', unidad.ANIO);
         setVal('p-v-mot', unidad.MOTOR); setVal('p-v-cha', unidad.CHASIS);
-        setVal('p-v-dan', val('danos_propios'));
-        setVal('p-relato', val('descripcion'));
+        setVal('p-v-dan', val('danos_propios')); setVal('p-relato', val('descripcion'));
         
         setVal('p-c-nom', val('nombre_chofer')); setVal('p-c-dni', val('dni_chofer'));
         setVal('p-c-tel', val('tel_chofer')); setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer'));
@@ -203,7 +193,7 @@ async function enviarSiniestro() {
             }) 
         });
 
-        // RESTAURAR ENVÍO DE MAIL
+        // ENVIO DE MAIL RESTAURADO
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
 
         alert("¡ÉXITO! Denuncia cargada: " + nroSiniestroFinal);
