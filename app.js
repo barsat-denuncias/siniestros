@@ -6,7 +6,7 @@ const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
 let unidad = {};
 let datosEmpresa = {};
-let nroSiniestroFinal = 100000; // Valor por defecto
+let nroSiniestroFinal = "SN-100000"; // Formato AON solicitado
 
 const titulos = ["", "Paso 1: Lugar y Fecha", "Paso 2: Conductor", "Paso 3: Daños y Relato", "Paso 4: El Tercero", "Paso 5: Fotos"];
 
@@ -36,7 +36,6 @@ window.onload = function() {
     });
 };
 
-// BOTÓN DE VALIDACIÓN: BÚSQUEDA DOBLE
 document.getElementById('form-validacion').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector('button');
@@ -46,7 +45,6 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
     const chasis = document.getElementById('chasis_val').value.trim();
 
     try {
-        // 1. Buscamos el camión
         const resUnidad = await fetch(`${URL_API}/rest/v1/Camiones?DOMINIO=eq.${patente}&CHASIS=like.*${chasis}`, {
             headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
         });
@@ -55,32 +53,30 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
         if (dataU.length > 0) {
             unidad = dataU[0];
             
-            // 2. Buscamos la empresa vinculada (usando RAZON_SOCIAL del camión como clave)
+            // BUSCAR EMPRESA: Aseguramos que busque por la columna RAZON_SOCIAL del camión
             const resEmpresa = await fetch(`${URL_API}/rest/v1/Empresas?nombre_clave=eq.${unidad.RAZON_SOCIAL}`, {
                 headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
             });
             const dataE = await resEmpresa.json();
             if (dataE.length > 0) { datosEmpresa = dataE[0]; }
 
-            // 3. Obtenemos el próximo número de siniestro
+            // NÚMERO DE SINIESTRO REAL
             const resSini = await fetch(`${URL_API}/rest/v1/Siniestros?select=nro_siniestro&order=nro_siniestro.desc&limit=1`, {
                 headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
             });
             const dataS = await resSini.json();
             if (dataS.length > 0 && dataS[0].nro_siniestro) {
-                nroSiniestroFinal = parseInt(dataS[0].nro_siniestro) + 1;
+                const numericPart = parseInt(dataS[0].nro_siniestro.split('-')[1]) || 100000;
+                nroSiniestroFinal = `SN-${numericPart + 1}`;
+            } else {
+                nroSiniestroFinal = "SN-100001"; // Inicio real
             }
 
             document.getElementById('pantalla-validacion').classList.add('hidden');
             document.getElementById('pantalla-formulario').classList.remove('hidden');
-        } else {
-            alert("Unidad no encontrada. Verifique patente y chasis.");
-        }
-    } catch (err) {
-        alert("Error de conexión: " + err.message);
-    } finally {
-        btn.innerText = "Validar Unidad"; btn.disabled = false;
-    }
+        } else { alert("Unidad no encontrada."); }
+    } catch (err) { alert("Error: " + err.message); }
+    finally { btn.innerText = "Validar Unidad"; btn.disabled = false; }
 });
 
 function cambiarPaso(paso) {
@@ -88,9 +84,6 @@ function cambiarPaso(paso) {
     document.getElementById(`step-${paso}`).classList.remove('hidden');
     document.getElementById('progress').style.width = (paso * 20) + "%";
     document.getElementById('titulo-paso').innerText = titulos[paso];
-    const msg = document.getElementById('msg-obligatorio');
-    if (paso === 5) msg.style.display = 'none';
-    else msg.style.display = 'block';
     window.scrollTo(0,0);
 }
 
@@ -129,7 +122,7 @@ async function enviarSiniestro() {
             }
         }
 
-        // POBLAR PDF CON DATOS AUTOMÁTICOS
+        // POBLAR PDF
         setVal('p-sini-id', nroSiniestroFinal);
         setVal('p-v-aseg', unidad.ASEGURADORA); 
         setVal('p-v-pol', unidad.POLIZA); 
@@ -142,32 +135,34 @@ async function enviarSiniestro() {
         setVal('p-calle', val('calle'));
         setVal('p-int', val('interseccion'));
         
-        // Datos Conductor
         setVal('p-c-nom', val('nombre_chofer'));
         setVal('p-c-dni', val('dni_chofer'));
         setVal('p-c-tel', val('tel_chofer'));
         setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer'));
         
-        // SECCIÓN 4: DATOS DEL ASEGURADO (Desde tabla Empresas)
-        setVal('p-aseg-razon', datosEmpresa.razon_social_completa);
+        // DATOS ASEGURADO AUTOMÁTICOS
+        setVal('p-aseg-razon', datosEmpresa.razon_social_completa || unidad.RAZON_SOCIAL);
         setVal('p-aseg-cuit', datosEmpresa.cuit);
         setVal('p-aseg-tel', datosEmpresa.telefono);
         setVal('p-aseg-dom', datosEmpresa.domicilio);
         setVal('p-aseg-cp', datosEmpresa.cp);
 
-        // SECCIÓN 5: VEHÍCULO
+        // VEHÍCULO
         setVal('p-v-do', unidad.DOMINIO);
-        setVal('p-v-ma', "MERCEDES BENZ"); // O unidad.VEHICULO
+        setVal('p-v-ma', unidad.MODELO.includes("MERCEDES") ? "MERCEDES BENZ" : "CITROEN");
         setVal('p-v-mo', unidad.MODELO);
-        setVal('p-v-ti', unidad.VEHICULO);
+        
+        // Lógica de Tipo: si no es CAMION, poner PARTICULAR
+        const tipoLimpio = (unidad.VEHICULO === "SOCIOS" || unidad.VEHICULO === "UTILITARIO") ? "PARTICULAR" : unidad.VEHICULO;
+        setVal('p-v-ti', tipoLimpio);
+        
+        setVal('p-v-anio', unidad.ANIO);
+        setVal('p-v-mot', unidad.MOTOR); // Buscando columna MOTOR
         setVal('p-v-cha', unidad.CHASIS);
         setVal('p-v-dan', val('danos_propios'));
         
-        // SECCIÓN 7, 8 y 9
-        setVal('p-7-lugar', val('localidad') + ", " + val('provincia'));
         setVal('p-t-p-no', val('prop_nombre') || val('nombre_chofer'));
         setVal('p-t-p-dn', val('prop_dni'));
-        setVal('p-t-p-te', val('prop_tel'));
         setVal('p-t-ma', val('marca_tercero'));
         setVal('p-t-mo', val('marca_tercero'));
         setVal('p-t-do', val('patente_tercero'));
@@ -176,8 +171,7 @@ async function enviarSiniestro() {
         setVal('p-t-dan', val('danos_tercero'));
         setVal('p-relato', val('descripcion'));
         
-        // SECCIÓN 9: DENUNCIANTE (Automático)
-        setVal('p-denun-nom', datosEmpresa.razon_social_completa);
+        setVal('p-denun-nom', datosEmpresa.razon_social_completa || val('nombre_chofer')); 
         setVal('p-denun-genero', "Persona Jurídica");
         setVal('p-denun-doc', "CUIT " + datosEmpresa.cuit);
         setVal('p-denun-tel', datosEmpresa.telefono);
@@ -201,21 +195,9 @@ async function enviarSiniestro() {
         await fetch(`${URL_API}/storage/v1/object/denuncias/${pdfPath}`, { method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/pdf' }, body: pdfBlob });
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
         
-        // GUARDAR EN BD (Incluyendo el nro_siniestro)
-        await fetch(`${URL_API}/rest/v1/Siniestros`, { 
-            method: 'POST', 
-            headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ 
-                fecha_hecho: val('fecha_hecho'), 
-                nombre_chofer: val('nombre_chofer'), 
-                link_pdf: linkFinal, 
-                dominio_nuestro: unidad.DOMINIO,
-                nro_siniestro: nroSiniestroFinal
-            }) 
-        });
-
+        await fetch(`${URL_API}/rest/v1/Siniestros`, { method: 'POST', headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ fecha_hecho: val('fecha_hecho'), nombre_chofer: val('nombre_chofer'), link_pdf: linkFinal, dominio_nuestro: unidad.DOMINIO, nro_siniestro: nroSiniestroFinal }) });
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
-        alert("¡ÉXITO! Denuncia cargada correctamente con el Nro: " + nroSiniestroFinal);
+        alert("¡ÉXITO! Denuncia cargada correctamente.");
         location.reload();
     } catch (e) { alert("Error crítico: " + e.message); btn.disabled = false; btn.innerText = "Finalizar Denuncia"; }
 }
