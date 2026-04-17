@@ -51,9 +51,9 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
 
         if (dataU.length > 0) {
             unidad = dataU[0];
-            const claveEmpresa = unidad.RAZON_SOCIAL.trim(); // "BARSAT", "TENLOG", etc.
+            const claveEmpresa = unidad.RAZON_SOCIAL.toUpperCase().trim(); 
 
-            // BUSQUEDA EN TABLA EMPRESAS
+            // BUSQUEDA ROBUSTA EN EMPRESAS
             const resE = await fetch(`${URL_API}/rest/v1/Empresas?nombre_clave=eq.${claveEmpresa}`, {
                 headers: { 'apikey': KEY_API, 'Authorization': `Bearer ${KEY_API}` }
             });
@@ -149,6 +149,16 @@ async function enviarSiniestro() {
         setVal('p-v-do', unidad.DOMINIO); setVal('p-v-anio', unidad.ANIO);
         setVal('p-v-mot', unidad.MOTOR); setVal('p-v-cha', unidad.CHASIS);
         setVal('p-v-dan', val('danos_propios'));
+        setVal('p-relato', val('descripcion'));
+        
+        setVal('p-c-nom', val('nombre_chofer')); setVal('p-c-dni', val('dni_chofer'));
+        setVal('p-c-tel', val('tel_chofer')); setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer'));
+        
+        setVal('p-t-p-no', val('prop_nombre') || val('nombre_chofer'));
+        setVal('p-t-p-dn', val('prop_dni')); setVal('p-t-ma', val('marca_tercero'));
+        setVal('p-t-mo', val('marca_tercero')); setVal('p-t-do', val('patente_tercero'));
+        setVal('p-t-se', val('seguro_tercero')); setVal('p-t-po', val('poliza_tercero'));
+        setVal('p-t-dan', val('danos_tercero'));
 
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
@@ -175,7 +185,6 @@ async function enviarSiniestro() {
                 tel_chofer: val('tel_chofer'),
                 domicilio_chofer: val('domicilio_chofer'),
                 link_pdf: linkFinal, 
-                dominio_nuestro: unidad.DOMINIO, 
                 nro_siniestro: nroSiniestroFinal,
                 danos_propios: val('danos_propios'),
                 relato: val('descripcion'),
@@ -194,7 +203,10 @@ async function enviarSiniestro() {
             }) 
         });
 
-        alert("Denuncia: " + nroSiniestroFinal);
+        // RESTAURAR ENVÍO DE MAIL
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { link_pdf: linkFinal, dominio: unidad.DOMINIO });
+
+        alert("¡ÉXITO! Denuncia cargada: " + nroSiniestroFinal);
         location.reload();
     } catch (e) { alert("Error: " + e.message); btn.disabled = false; btn.innerText = "Finalizar Denuncia"; }
 }
