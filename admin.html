@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Control - BARSAT</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+
+        .login-container { max-width: 400px; margin: 60px auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .login-container h2 { color: #0056b3; margin-top: 0; text-align: center; }
+        .login-container input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 15px; }
+        .login-container button { width: 100%; padding: 14px; background: #0056b3; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; font-size: 16px; }
+        .login-container button:hover { background: #004494; }
+        #login-error { color: #d9534f; font-size: 14px; margin-top: 10px; text-align: center; min-height: 20px; }
+
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0056b3; padding-bottom: 15px; margin-bottom: 25px; }
+        .header h1 { color: #0056b3; margin: 0; font-size: 24px; }
+        .header-right { display: flex; gap: 10px; align-items: center; }
+        .user-badge { font-size: 13px; color: #666; margin-right: 10px; }
+
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin-bottom: 30px; }
+        .chart-container { background: #fff; border: 1px solid #eee; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .chart-container h3 { margin-top: 0; color: #333; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+
+        .controls { display: flex; gap: 15px; margin-bottom: 20px; align-items: center; }
+        #busqueda { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+
+        .btn-excel { background: #28a745; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; font-size: 13px; }
+        .btn-excel:hover { background: #218838; }
+        .btn-pass { background: #ffc107; color: #212529; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; }
+        .btn-pass:hover { background: #e0a800; }
+        .btn-logout { background: #6c757d; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; }
+        .btn-logout:hover { background: #5a6268; }
+
+        .table-wrapper { overflow-x: auto; border-radius: 8px; border: 1px solid #ddd; }
+        table { width: 100%; border-collapse: collapse; background: white; font-size: 13px; }
+        th { background: #0056b3; color: white; padding: 12px; text-align: left; }
+        td { padding: 12px; border-bottom: 1px solid #eee; color: #444; }
+        tr:hover { background: #f8f9fa; }
+
+        .btn-pdf { background: #d9534f; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+        .btn-pdf:hover { background: #c9302c; }
+
+        .chip { display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+        .chip-externo { background: #cfe2ff; color: #084298; }
+        .chip-interno { background: #d1e7dd; color: #0f5132; }
+
+        #filtro-tipo { padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; background: white; }
+        .resumen-internos { background: #e8f5ee; border: 1px solid #c3e6cb; border-radius: 8px; padding: 10px 16px; font-size: 13px; color: #155724; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .resumen-internos b { font-size: 16px; }
+
+        .hidden { display: none !important; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+        .modal-content { background: white; padding: 30px; border-radius: 12px; max-width: 420px; width: 90%; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+        .modal-content h3 { color: #0056b3; margin-top: 0; }
+        .modal-content input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+        .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .btn-save { background: #28a745; color: white; }
+        .btn-cancel { background: #dc3545; color: white; }
+        .modal-status { font-size: 13px; margin-top: 10px; min-height: 18px; }
+    </style>
+</head>
+<body>
+    <!-- PANTALLA DE LOGIN -->
+    <div id="pantalla-login" class="login-container">
+        <h2>BARSAT - Panel Admin</h2>
+        <form id="form-login">
+            <input type="email" id="login-email" placeholder="Email" required autocomplete="username">
+            <input type="password" id="login-password" placeholder="Contraseña" required autocomplete="current-password">
+            <button type="submit">Iniciar sesión</button>
+        </form>
+        <p id="login-error"></p>
+    </div>
+
+    <!-- PANEL (oculto hasta login) -->
+    <div id="pantalla-admin" class="container hidden">
+        <div class="header">
+            <h1>Historial y Estadísticas de Siniestros</h1>
+            <div class="header-right">
+                <span class="user-badge" id="user-email"></span>
+                <button class="btn-excel" onclick="descargarExcel()">Exportar Excel</button>
+                <button class="btn-pass" onclick="abrirCambioPass()">Cambiar contraseña</button>
+                <button class="btn-logout" onclick="signOut()">Salir</button>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="chart-container">
+                <h3>Evolución Mensual de Siniestros</h3>
+                <canvas id="chartMeses"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>Distribución Geográfica (Provincias)</h3>
+                <canvas id="chartProvincias"></canvas>
+            </div>
+        </div>
+
+        <div id="resumen-internos" class="resumen-internos hidden">
+            <span>Pérdidas por siniestros internos registradas:</span>
+            <span><b id="total-internos">$ 0</b> · <span id="cant-internos">0</span> constancias</span>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="busqueda" placeholder="Filtrar por chofer, patente, provincia o empresa..." onkeyup="filtrarTabla()">
+            <select id="filtro-tipo" onchange="aplicarFiltroTipo()">
+                <option value="TODOS">Todos</option>
+                <option value="EXTERNO">Solo Externos</option>
+                <option value="INTERNO">Solo Internos</option>
+            </select>
+        </div>
+
+        <div class="table-wrapper">
+            <table id="tablaSiniestros">
+                <thead>
+                    <tr>
+                        <th>Tipo</th>
+                        <th>Fecha Hecho</th>
+                        <th>Empresa / Cliente</th>
+                        <th>Conductor</th>
+                        <th>Patente Tercero / 2do</th>
+                        <th>Provincia / Lugar</th>
+                        <th>Presupuesto</th>
+                        <th>PDF</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTabla"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- MODAL CAMBIO CONTRASEÑA -->
+    <div id="modal-pass" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>Cambiar contraseña</h3>
+            <input type="password" id="new-pass" placeholder="Nueva contraseña (mínimo 8 caracteres)">
+            <input type="password" id="confirm-pass" placeholder="Confirmar nueva contraseña">
+            <p id="pass-status" class="modal-status"></p>
+            <div class="modal-actions">
+                <button class="btn-save" onclick="guardarNuevaPass()">Guardar</button>
+                <button class="btn-cancel" onclick="cerrarCambioPass()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
