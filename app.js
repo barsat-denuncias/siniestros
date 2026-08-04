@@ -166,8 +166,7 @@ function aplicarValidacionEstricta(id) {
 // Al escribir el DNI se consulta la RPC buscar_chofer (padron de Choferes) y
 // se rellenan nombre, telefono, domicilio, CP y localidad.
 // Si el DNI no figura NO se bloquea nada: se avisa y el chofer carga a mano.
-// La localidad puede venir DEDUCIDA del codigo postal; en ese caso se marca
-// en amarillo porque el PDF es declaracion jurada y hay que verificarla.
+// Los campos del conductor no se muestran hasta que la busqueda termina.
 // ============================================================================
 let choferEncontrado = null;   // guardamos legajo/op para el payload
 let ultimoDniBuscado = '';
@@ -197,6 +196,25 @@ function limpiarAutocompletado() {
     CAMPOS_AUTOCOMPLETABLES.forEach(id => marcarCampo(id, null));
 }
 
+// Los campos del conductor arrancan ocultos. Recien se muestran cuando el
+// backend contesto: con los datos cargados si el DNI figura, o vacios si no.
+// Asi el chofer no empieza a escribir al pedo algo que se iba a completar solo.
+function mostrarDatosConductor(mostrar) {
+    const box = document.getElementById('datos-conductor');
+    if (box) box.classList.toggle('hidden', !mostrar);
+}
+
+function resetearPaso2() {
+    ultimoDniBuscado = '';
+    limpiarAutocompletado();
+    mostrarDatosConductor(false);
+    statusDni('');
+    ['dni_chofer'].concat(CAMPOS_AUTOCOMPLETABLES).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.value = ''; el.style.borderColor = '#ddd'; }
+    });
+}
+
 // Rellena un campo SOLO si esta vacio o si el valor lo habiamos puesto
 // nosotros. Nunca pisamos algo que el chofer escribio a mano.
 function rellenarCampoChofer(id, valor) {
@@ -219,6 +237,7 @@ async function buscarChoferPorDni() {
     if (dni.length < 7) {
         statusDni('');
         limpiarAutocompletado();
+        mostrarDatosConductor(false);
         return;
     }
 
@@ -233,6 +252,7 @@ async function buscarChoferPorDni() {
         if (!data || !data.encontrado) {
             limpiarAutocompletado();
             statusDni('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
+            mostrarDatosConductor(true);
             return;
         }
 
@@ -251,10 +271,12 @@ async function buscarChoferPorDni() {
         let msg = c.nombre_completo || 'Conductor encontrado';
         if (c.op) msg += ' — ' + c.op + (c.legajo ? ' (leg. ' + c.legajo + ')' : '');
         statusDni(msg, 'ok');
+        mostrarDatosConductor(true);
 
     } catch (err) {
         limpiarAutocompletado();
         statusDni('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
+        mostrarDatosConductor(true);
         console.warn('buscar_chofer fallo:', err.message);
     }
 }
@@ -741,6 +763,7 @@ function iniciarFlujoExterno() {
     limpiarPreviewsFotosViejas();
     actualizarBannerAmpliacion();
     resetearCroquis();
+    resetearPaso2();
     document.getElementById('pantalla-tipo-siniestro').classList.add('hidden');
     document.getElementById('pantalla-formulario-interno').classList.add('hidden');
     document.getElementById('pantalla-formulario').classList.remove('hidden');
@@ -945,8 +968,10 @@ function precargarFormulario(s) {
     setVal2('prov_chofer', s.prov_chofer);
     setVal2('cp_chofer', s.cp_chofer);
     // En ampliacion respetamos lo que se cargo la primera vez: los campos
-    // quedan sin marca de "autocompletado" asi la busqueda por DNI no los pisa.
+    // quedan sin marca de "autocompletado" asi la busqueda por DNI no los pisa,
+    // y se muestran directamente porque ya vienen llenos.
     limpiarAutocompletado();
+    mostrarDatosConductor(true);
     ultimoDniBuscado = String(s.dni_chofer || '').replace(/\D/g, '');
 
     // Paso 3

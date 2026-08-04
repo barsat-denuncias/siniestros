@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>App Siniestros</title>
-    <link rel="stylesheet" href="style.css">
+    <!-- El ?v= evita que el navegador sirva una version cacheada.
+         Al cambiar app.js o style.css, subir el numero. -->
+    <link rel="stylesheet" href="style.css?v=2">
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -74,17 +76,19 @@
             </div>
 
             <div class="step hidden" id="step-2">
-                <p style="font-size:12px; color:#666; margin:0 0 8px 0;">Escribí el DNI y los datos del conductor se completan solos.</p>
+                <p style="font-size:12px; color:#666; margin:0 0 8px 0;">Escribí el DNI del conductor.</p>
                 <input type="text" id="dni_chofer" placeholder="DNI Conductor*" required maxlength="10" inputmode="numeric" autocomplete="off">
                 <p id="dni-status" class="dni-status"></p>
 
-                <input type="text" id="nombre_chofer" placeholder="Apellido y Nombre Conductor*" required maxlength="60">
-                <input type="text" id="tel_chofer" placeholder="Teléfono de contacto*" required maxlength="15">
-                <input type="text" id="domicilio_chofer" placeholder="Domicilio Conductor*" required maxlength="80">
-                <input type="text" id="cp_chofer" placeholder="Código Postal Conductor*" required maxlength="10">
-                <input type="text" id="loc_chofer" placeholder="Localidad Conductor*" required maxlength="40">
-                <input type="text" id="prov_chofer" placeholder="Provincia Conductor*" required maxlength="40">
-                <button onclick="validarYPasar(3)">Siguiente</button>
+                <div id="datos-conductor" class="hidden">
+                    <input type="text" id="nombre_chofer" placeholder="Apellido y Nombre Conductor*" required maxlength="60">
+                    <input type="text" id="tel_chofer" placeholder="Teléfono de contacto*" required maxlength="15">
+                    <input type="text" id="domicilio_chofer" placeholder="Domicilio Conductor*" required maxlength="80">
+                    <input type="text" id="cp_chofer" placeholder="Código Postal Conductor*" required maxlength="10">
+                    <input type="text" id="loc_chofer" placeholder="Localidad Conductor*" required maxlength="40">
+                    <input type="text" id="prov_chofer" placeholder="Provincia Conductor*" required maxlength="40">
+                    <button onclick="validarYPasar(3)">Siguiente</button>
+                </div>
                 <button class="btn-secundario" onclick="cambiarPaso(1)">Volver</button>
             </div>
 
@@ -352,6 +356,6 @@
             </div>
         </div>
     </div>
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
 </html>
