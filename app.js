@@ -69,6 +69,30 @@ function setVal(id, text) {
     if (el) el.innerText = text || "";
 }
 
+// ============================================================================
+// FECHAS
+// Los <input type="date"> devuelven ISO ("2026-08-04") y toLocaleDateString()
+// depende del idioma del navegador (en un equipo en ingles sale 8/4/2026).
+// En los PDF siempre va formato argentino dd/mm/aaaa.
+// ============================================================================
+function fechaAR(valor) {
+    if (!valor) return "";
+    // Fecha ISO "2026-08-04" o "2026-08-04T..."
+    const iso = String(valor).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+    // Ya viene en dd/mm/aaaa
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(String(valor).trim())) return String(valor).trim();
+    return String(valor);
+}
+
+// Fecha de hoy en formato argentino, sin depender del locale del navegador.
+function hoyAR() {
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
 // FUNCIÓN PARA LIMPIAR ARCHIVOS SELECCIONADOS
 function limpiarAdjunto(id) { document.getElementById(id).value = ""; }
 
@@ -191,9 +215,27 @@ function statusDni(msg, tipo) {
     el.className = 'dni-status' + (tipo ? ' ' + tipo : '');
 }
 
+// Solo saca la marca verde, deja los valores. Se usa en las ampliaciones,
+// donde los campos vienen cargados de la denuncia original.
 function limpiarAutocompletado() {
     choferEncontrado = null;
     CAMPOS_AUTOCOMPLETABLES.forEach(id => marcarCampo(id, null));
+}
+
+// VACIA los campos que habiamos completado nosotros. Se llama antes de cada
+// busqueda nueva: si no, al cambiar de DNI quedaban colgados los datos del
+// chofer anterior (y peor: si el chofer nuevo no tenia telefono, se quedaba
+// el telefono del otro).
+// Lo que el chofer escribio a mano no tiene la marca, asi que no se toca.
+function limpiarCamposAutocompletados() {
+    choferEncontrado = null;
+    CAMPOS_AUTOCOMPLETABLES.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.classList.contains('autocompletado')) {
+            el.value = '';
+            el.classList.remove('autocompletado');
+        }
+    });
 }
 
 // Los campos del conductor arrancan ocultos. Recien se muestran cuando el
@@ -236,7 +278,7 @@ async function buscarChoferPorDni() {
 
     if (dni.length < 7) {
         statusDni('');
-        limpiarAutocompletado();
+        limpiarCamposAutocompletados();
         mostrarDatosConductor(false);
         return;
     }
@@ -249,8 +291,10 @@ async function buscarChoferPorDni() {
         const actual = document.getElementById('dni_chofer').value.replace(/\D/g, '');
         if (actual !== dni) return;
 
+        // Antes de nada, borramos lo que habiamos puesto del DNI anterior.
+        limpiarCamposAutocompletados();
+
         if (!data || !data.encontrado) {
-            limpiarAutocompletado();
             statusDni('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
             mostrarDatosConductor(true);
             return;
@@ -274,7 +318,7 @@ async function buscarChoferPorDni() {
         mostrarDatosConductor(true);
 
     } catch (err) {
-        limpiarAutocompletado();
+        limpiarCamposAutocompletados();
         statusDni('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
         mostrarDatosConductor(true);
         console.warn('buscar_chofer fallo:', err.message);
@@ -323,15 +367,27 @@ async function buscarChoferInterno() {
     if (dni === ultimoDniInterno) return;
     ultimoDniInterno = dni;
 
-    if (dni.length < 7) { statusDniInterno(''); return; }
+    // Vacia lo que habiamos completado del DNI anterior
+    const limpiarInternos = () => {
+        ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && el.classList.contains('autocompletado')) {
+                el.value = '';
+                el.classList.remove('autocompletado');
+            }
+        });
+    };
+
+    if (dni.length < 7) { statusDniInterno(''); limpiarInternos(); return; }
 
     statusDniInterno('Buscando conductor...', 'buscando');
     try {
         const data = await rpc('buscar_chofer', { p_dni: dni });
         if (document.getElementById('i_dni_chofer').value.replace(/\D/g, '') !== dni) return;
 
+        limpiarInternos();
+
         if (!data || !data.encontrado) {
-            ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => marcarCampo(id, null));
             statusDniInterno('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
             return;
         }
@@ -343,7 +399,7 @@ async function buscarChoferInterno() {
         if (c.op) msg += ' — ' + c.op + (c.legajo ? ' (leg. ' + c.legajo + ')' : '');
         statusDniInterno(msg, 'ok');
     } catch (err) {
-        ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => marcarCampo(id, null));
+        limpiarInternos();
         statusDniInterno('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
         console.warn('buscar_chofer (interno) fallo:', err.message);
     }
@@ -617,6 +673,29 @@ window.onload = function() {
     }
 };
 
+// El daño interno puede ser contra otra unidad de la flota o contra un bien
+// de la empresa (porton, columna, rampa). Segun cual sea, se pide una cosa u
+// otra y se ajusta que campo es obligatorio.
+function actualizarTipoAfectado() {
+    const tipo   = document.getElementById('i_tipo_afectado');
+    const bUnid  = document.getElementById('bloque-unidad-afectada');
+    const bBien  = document.getElementById('bloque-bien-afectado');
+    const inpDom = document.getElementById('i_patente2');
+    const inpBien= document.getElementById('i_bien_afectado');
+    if (!tipo || !bUnid || !bBien) return;
+
+    const esBien = tipo.value === 'BIEN';
+    bUnid.classList.toggle('hidden', esBien);
+    bBien.classList.toggle('hidden', !esBien);
+
+    if (inpDom)  { inpDom.required  = !esBien; if (esBien) inpDom.value  = ''; }
+    if (inpBien) { inpBien.required =  esBien; if (!esBien) inpBien.value = ''; }
+
+    const st = document.getElementById('i_patente2_status');
+    if (st) { st.innerText = ''; st.style.color = ''; }
+    unidad2 = {};
+}
+
 // Muestra/oculta el input de monto segun el tipo de presupuesto seleccionado.
 function actualizarVisibilidadMonto() {
     const tipo = document.getElementById('i_presup_tipo').value;
@@ -786,6 +865,12 @@ function iniciarFlujoInterno() {
     const selT = document.getElementById('i_presup_tipo');
     if (selT) selT.value = 'PENDIENTE';
     actualizarVisibilidadMonto();
+    // Reset del tipo de daño: por defecto contra otra unidad de la flota
+    const selA = document.getElementById('i_tipo_afectado');
+    if (selA) selA.value = 'UNIDAD';
+    actualizarTipoAfectado();
+    ultimoDniInterno = '';
+    statusDniInterno('');
     cambiarPasoInterno(1);
 }
 
@@ -1162,9 +1247,10 @@ async function enviarSiniestro() {
 
         // 3. Llenar template con el SN asignado
         setVal('p-sini-id', nroSiniestroFinal);
-        setVal('p-v-aseg', unidad.ASEGURADORA); setVal('p-v-pol', unidad.POLIZA);
-        setVal('p-fecha', val('fecha_hecho')); setVal('p-hora', val('hora_hecho'));
-        setVal('p-fecha-den', new Date().toLocaleDateString());
+        setVal('p-v-aseg', unidad.ASEGURADORA_LEGAL || unidad.ASEGURADORA);
+        setVal('p-v-pol', unidad.POLIZA);
+        setVal('p-fecha', fechaAR(val('fecha_hecho'))); setVal('p-hora', val('hora_hecho'));
+        setVal('p-fecha-den', hoyAR());
         setVal('p-loc', localidadFinal); setVal('p-prov', val('provincia'));
         setVal('p-calle', val('calle')); setVal('p-int', val('interseccion'));
 
@@ -1184,8 +1270,12 @@ async function enviarSiniestro() {
         setVal('p-v-dan', val('danos_propios')); setVal('p-relato', val('descripcion'));
 
         setVal('p-c-nom', val('nombre_chofer')); setVal('p-c-dni', val('dni_chofer'));
-        setVal('p-c-tel', val('tel_chofer')); setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer'));
-        setVal('p-cp', val('cp_chofer'));
+        setVal('p-c-tel', val('tel_chofer'));
+        // Domicilio va solo; localidad, provincia y CP tienen su propio campo.
+        setVal('p-c-dom',  val('domicilio_chofer'));
+        setVal('p-c-loc',  val('loc_chofer'));
+        setVal('p-c-prov', val('prov_chofer'));
+        setVal('p-cp',     val('cp_chofer'));
 
         setVal('p-t-p-no', val('prop_nombre') || val('nombre_chofer'));
         setVal('p-t-p-dn', val('prop_dni')); setVal('p-t-ma', val('marca_tercero'));
@@ -1323,31 +1413,53 @@ async function validarYPasarInterno(proximoPaso) {
         });
         if (!valido) return;
 
-        // Validacion extra: el segundo dominio debe ser de la flota Y distinto al primero
+        // Si el daño fue contra un bien de la empresa no hay segundo dominio
+        const tipoAfect = (document.getElementById('i_tipo_afectado') || {}).value || 'UNIDAD';
+        if (tipoAfect === 'BIEN') {
+            const inpBien = document.getElementById('i_bien_afectado');
+            if (!inpBien || !inpBien.value.trim()) {
+                if (inpBien) inpBien.style.borderColor = "red";
+                return;
+            }
+            inpBien.style.borderColor = "#ddd";
+            unidad2 = {};
+            cambiarPasoInterno(2);
+            return;
+        }
+
+        // Contra otra unidad: tiene que estar en la flota Y bajo la MISMA POLIZA.
+        // Si son polizas distintas hay reclamo entre companias y corresponde
+        // denuncia con tercero, no constancia interna.
         const dom2 = document.getElementById('i_patente2').value.trim().toUpperCase();
         const status = document.getElementById('i_patente2_status');
         const inputP2 = document.getElementById('i_patente2');
 
-        if (dom2 === unidad.DOMINIO) {
-            inputP2.style.borderColor = "red";
-            status.style.color = "#d9534f";
-            status.innerText = "El segundo dominio no puede ser el mismo que el primero.";
-            return;
-        }
-
         status.style.color = "#555";
         status.innerText = "Validando dominio...";
         try {
-            const data = await rpc('validar_unidad', { p_patente: dom2, p_chasis_suffix: '' });
-            if (!data || !data.encontrado) {
+            const chequeo = await rpc('validar_unidad_interna', {
+                p_dominio1: unidad.DOMINIO,
+                p_dominio2: dom2
+            });
+
+            if (!chequeo || !chequeo.ok) {
                 inputP2.style.borderColor = "red";
                 status.style.color = "#d9534f";
-                status.innerText = `Dominio ${dom2} no figura en la flota.`;
+                status.innerText = (chequeo && chequeo.mensaje)
+                    ? chequeo.mensaje
+                    : `Dominio ${dom2} no figura en la flota.`;
                 return;
             }
-            unidad2 = data.camion || {};
+
+            inputP2.style.borderColor = "#ddd";
+            unidad2 = {
+                DOMINIO: dom2,
+                MODELO: chequeo.modelo,
+                RAZON_SOCIAL: chequeo.razon_social,
+                POLIZA: chequeo.poliza
+            };
             status.style.color = "#28a745";
-            status.innerText = `✓ ${unidad2.MODELO || ''}`;
+            status.innerText = `✓ ${chequeo.modelo || ''} — misma póliza (${chequeo.poliza})`;
         } catch (err) {
             status.style.color = "#d9534f";
             status.innerText = "Error al validar: " + err.message;
@@ -1424,6 +1536,10 @@ async function enviarSiniestroInterno() {
             calle_interseccion: valRaw('i_lugar'),
             dominio_asegurado: unidad.DOMINIO,
             tipo_siniestro: 'INTERNO',
+            tipo_afectado: val('i_tipo_afectado') || 'UNIDAD',
+            bien_afectado: valRaw('i_bien_afectado'),
+            legajo_chofer: (choferEncontrado && choferEncontrado.legajo) || '',
+            op_chofer: (choferEncontrado && choferEncontrado.op) || '',
             presupuesto_monto: valRaw('i_presup_monto'),
             presupuesto_tipo: val('i_presup_tipo')
         };
@@ -1436,8 +1552,8 @@ async function enviarSiniestroInterno() {
 
         // 3. Llenar template PDF interno
         setVal('pi-sini-id', nroSiniestroFinal);
-        setVal('pi-fecha-den', new Date().toLocaleDateString());
-        setVal('pi-fecha', valRaw('i_fecha'));
+        setVal('pi-fecha-den', hoyAR());
+        setVal('pi-fecha', fechaAR(valRaw('i_fecha')));
         setVal('pi-hora', valRaw('i_hora'));
         setVal('pi-lugar', valRaw('i_lugar'));
         setVal('pi-c-nom', val('i_nombre_chofer'));
@@ -1445,7 +1561,14 @@ async function enviarSiniestroInterno() {
         setVal('pi-c-tel', val('i_tel_chofer'));
 
         setVal('pi-v1-do', unidad.DOMINIO);
-        setVal('pi-v2-do', (unidad2 && unidad2.DOMINIO) || val('i_patente2'));
+        if ((val('i_tipo_afectado') || 'UNIDAD') === 'BIEN') {
+            setVal('pi-v2-label', 'Bien de la empresa afectado:');
+            setVal('pi-v2-do', valRaw('i_bien_afectado'));
+        } else {
+            setVal('pi-v2-label', 'Parte embestida:');
+            setVal('pi-v2-do', (unidad2 && unidad2.DOMINIO) || val('i_patente2'));
+        }
+        setVal('pi-poliza', unidad.POLIZA || '');
 
         setVal('pi-relato', valRaw('i_relato'));
 

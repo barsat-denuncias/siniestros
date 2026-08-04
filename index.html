@@ -6,7 +6,7 @@
     <title>App Siniestros</title>
     <!-- El ?v= evita que el navegador sirva una version cacheada.
          Al cambiar app.js o style.css, subir el numero. -->
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=4">
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -159,8 +159,21 @@
                 <p id="i-dni-status" class="dni-status"></p>
                 <input type="text" id="i_nombre_chofer" placeholder="Apellido y Nombre Conductor" required maxlength="50">
                 <input type="text" id="i_tel_chofer" placeholder="Teléfono Conductor" required maxlength="15" inputmode="numeric">
-                <input type="text" id="i_patente2" placeholder="Vehículo afectado" required maxlength="7">
-                <p id="i_patente2_status" style="font-size: 11px; margin: -8px 0 8px; min-height: 14px;"></p>
+                <label style="margin-top:8px; display:block;">¿Contra qué fue el daño?</label>
+                <select id="i_tipo_afectado" onchange="actualizarTipoAfectado()">
+                    <option value="UNIDAD">Otra unidad de la flota</option>
+                    <option value="BIEN">Un bien de la empresa (portón, columna, rampa)</option>
+                </select>
+
+                <div id="bloque-unidad-afectada">
+                    <input type="text" id="i_patente2" placeholder="Dominio de la otra unidad" required maxlength="7">
+                    <p id="i_patente2_status" style="font-size: 11px; margin: -8px 0 8px; min-height: 14px;"></p>
+                </div>
+
+                <div id="bloque-bien-afectado" class="hidden">
+                    <input type="text" id="i_bien_afectado" placeholder="Bien afectado de la empresa" maxlength="80">
+                    <p style="font-size:11px; color:#888; margin:-8px 0 8px;">Ejemplos: portón del depósito, columna de la playa, rampa de carga.</p>
+                </div>
                 <button onclick="validarYPasarInterno(2)">Siguiente</button>
                 <button class="btn-secundario" onclick="volverASelector()">Volver</button>
             </div>
@@ -233,14 +246,15 @@
                     <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 12px; font-size: 11pt;">3 &nbsp; DATOS DEL CONDUCTOR DEL VEHÍCULO ASEGURADO</div>
                     <div style="display: grid; grid-template-columns: 1.2fr 1fr; margin-bottom: 10px;">
                         <div><b>Apellido y Nombre:</b> <span id="p-c-nom"></span></div>
-                        <div><b>Email:</b> mbenitez@barsat.com.ar</div>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1.2fr 1fr; margin-bottom: 10px;">
                         <div><b>Tipo y Nº documento:</b> <span id="p-c-dni"></span></div>
-                        <div><b>Teléfono:</b> <span id="p-c-tel"></span></div>
                     </div>
                     <div style="display: grid; grid-template-columns: 1.2fr 1fr; margin-bottom: 10px;">
                         <div><b>Domicilio:</b> <span id="p-c-dom"></span></div>
+                        <div><b>Teléfono:</b> <span id="p-c-tel"></span></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; margin-bottom: 10px;">
+                        <div><b>Localidad:</b> <span id="p-c-loc"></span></div>
+                        <div><b>Provincia:</b> <span id="p-c-prov"></span></div>
                         <div><b>C.P:</b> <span id="p-cp"></span></div>
                     </div>
                     <div style="margin-bottom: 40px;"><b>Conductor habitual:</b> SI</div>
@@ -336,7 +350,8 @@
 
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">3 &nbsp; VEHÍCULOS</div>
                 <div style="margin-bottom: 6px;"><b>Vehículo embestidor:</b> <span id="pi-v1-do"></span></div>
-                <div style="margin-bottom: 20px;"><b>Parte embestida:</b> <span id="pi-v2-do"></span></div>
+                <div style="margin-bottom: 6px;"><b><span id="pi-v2-label">Parte embestida:</span></b> <span id="pi-v2-do"></span></div>
+                <div style="margin-bottom: 20px;"><b>Póliza:</b> <span id="pi-poliza"></span></div>
 
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">4 &nbsp; RELATO Y DAÑOS</div>
                 <div id="pi-relato" style="font-size: 9.5pt; white-space: pre-wrap; min-height: 80px; line-height: 1.4; border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;"></div>
@@ -356,6 +371,6 @@
             </div>
         </div>
     </div>
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=4"></script>
 </body>
 </html>
