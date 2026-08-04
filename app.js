@@ -161,6 +161,189 @@ function aplicarValidacionEstricta(id) {
     });
 }
 
+// ============================================================================
+// AUTOCOMPLETADO DEL CONDUCTOR POR DNI
+// Al escribir el DNI se consulta la RPC buscar_chofer (padron de Choferes) y
+// se rellenan nombre, telefono, domicilio, CP y localidad.
+// Si el DNI no figura NO se bloquea nada: se avisa y el chofer carga a mano.
+// La localidad puede venir DEDUCIDA del codigo postal; en ese caso se marca
+// en amarillo porque el PDF es declaracion jurada y hay que verificarla.
+// ============================================================================
+let choferEncontrado = null;   // guardamos legajo/op para el payload
+let ultimoDniBuscado = '';
+let timerBusquedaDni = null;
+
+const CAMPOS_AUTOCOMPLETABLES = [
+    'nombre_chofer', 'tel_chofer', 'domicilio_chofer',
+    'cp_chofer', 'loc_chofer', 'prov_chofer'
+];
+
+function marcarCampo(id, clase) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('autocompletado');
+    if (clase) el.classList.add(clase);
+}
+
+function statusDni(msg, tipo) {
+    const el = document.getElementById('dni-status');
+    if (!el) return;
+    el.innerText = msg || '';
+    el.className = 'dni-status' + (tipo ? ' ' + tipo : '');
+}
+
+function limpiarAutocompletado() {
+    choferEncontrado = null;
+    CAMPOS_AUTOCOMPLETABLES.forEach(id => marcarCampo(id, null));
+}
+
+// Rellena un campo SOLO si esta vacio o si el valor lo habiamos puesto
+// nosotros. Nunca pisamos algo que el chofer escribio a mano.
+function rellenarCampoChofer(id, valor) {
+    const el = document.getElementById(id);
+    if (!el || !valor) return;
+    if (el.value.trim() !== '' && !el.classList.contains('autocompletado')) return;
+    el.value = valor;
+    el.style.borderColor = '#ddd';
+    marcarCampo(id, 'autocompletado');
+}
+
+async function buscarChoferPorDni() {
+    const input = document.getElementById('dni_chofer');
+    if (!input) return;
+    const dni = input.value.replace(/\D/g, '');
+
+    if (dni === ultimoDniBuscado) return;
+    ultimoDniBuscado = dni;
+
+    if (dni.length < 7) {
+        statusDni('');
+        limpiarAutocompletado();
+        return;
+    }
+
+    statusDni('Buscando conductor...', 'buscando');
+    try {
+        const data = await rpc('buscar_chofer', { p_dni: dni });
+
+        // Si mientras tanto siguio tipeando, descartamos esta respuesta
+        const actual = document.getElementById('dni_chofer').value.replace(/\D/g, '');
+        if (actual !== dni) return;
+
+        if (!data || !data.encontrado) {
+            limpiarAutocompletado();
+            statusDni('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
+            return;
+        }
+
+        const c = data.chofer || {};
+        choferEncontrado = c;
+
+        // Se completa lo que el padron tenga. Lo que no tenga queda vacio y el
+        // chofer lo escribe (o pone NO INFORMA), como cualquier otro campo.
+        rellenarCampoChofer('nombre_chofer',    c.nombre_completo);
+        rellenarCampoChofer('domicilio_chofer', c.domicilio);
+        rellenarCampoChofer('cp_chofer',        c.cp);
+        rellenarCampoChofer('loc_chofer',       c.localidad);
+        rellenarCampoChofer('prov_chofer',      c.provincia);
+        rellenarCampoChofer('tel_chofer',       c.telefono);
+
+        let msg = c.nombre_completo || 'Conductor encontrado';
+        if (c.op) msg += ' — ' + c.op + (c.legajo ? ' (leg. ' + c.legajo + ')' : '');
+        statusDni(msg, 'ok');
+
+    } catch (err) {
+        limpiarAutocompletado();
+        statusDni('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
+        console.warn('buscar_chofer fallo:', err.message);
+    }
+}
+
+function initAutocompletadoChofer() {
+    const input = document.getElementById('dni_chofer');
+    if (!input) return;
+
+    input.addEventListener('input', () => {
+        clearTimeout(timerBusquedaDni);
+        timerBusquedaDni = setTimeout(buscarChoferPorDni, 450);
+    });
+    input.addEventListener('blur', () => {
+        clearTimeout(timerBusquedaDni);
+        buscarChoferPorDni();
+    });
+
+    // Si el chofer corrige a mano un campo autocompletado, le sacamos la marca
+    // para no volver a pisarselo en la proxima busqueda.
+    CAMPOS_AUTOCOMPLETABLES.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', () => el.classList.remove('autocompletado'));
+    });
+}
+
+// ---- Misma logica, version reducida, para el flujo INTERNO ----
+// La constancia interna solo imprime nombre, DNI y telefono del conductor.
+let ultimoDniInterno = '';
+let timerDniInterno = null;
+
+function statusDniInterno(msg, tipo) {
+    const el = document.getElementById('i-dni-status');
+    if (!el) return;
+    el.innerText = msg || '';
+    el.className = 'dni-status' + (tipo ? ' ' + tipo : '');
+}
+
+async function buscarChoferInterno() {
+    const input = document.getElementById('i_dni_chofer');
+    if (!input) return;
+    const dni = input.value.replace(/\D/g, '');
+
+    if (dni === ultimoDniInterno) return;
+    ultimoDniInterno = dni;
+
+    if (dni.length < 7) { statusDniInterno(''); return; }
+
+    statusDniInterno('Buscando conductor...', 'buscando');
+    try {
+        const data = await rpc('buscar_chofer', { p_dni: dni });
+        if (document.getElementById('i_dni_chofer').value.replace(/\D/g, '') !== dni) return;
+
+        if (!data || !data.encontrado) {
+            ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => marcarCampo(id, null));
+            statusDniInterno('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
+            return;
+        }
+        const c = data.chofer || {};
+        rellenarCampoChofer('i_nombre_chofer', c.nombre_completo);
+        rellenarCampoChofer('i_tel_chofer',    c.telefono);
+
+        let msg = c.nombre_completo || 'Conductor encontrado';
+        if (c.op) msg += ' — ' + c.op + (c.legajo ? ' (leg. ' + c.legajo + ')' : '');
+        statusDniInterno(msg, 'ok');
+    } catch (err) {
+        ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => marcarCampo(id, null));
+        statusDniInterno('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
+        console.warn('buscar_chofer (interno) fallo:', err.message);
+    }
+}
+
+function initAutocompletadoChoferInterno() {
+    const input = document.getElementById('i_dni_chofer');
+    if (!input) return;
+    input.addEventListener('input', () => {
+        clearTimeout(timerDniInterno);
+        timerDniInterno = setTimeout(buscarChoferInterno, 450);
+    });
+    input.addEventListener('blur', () => {
+        clearTimeout(timerDniInterno);
+        buscarChoferInterno();
+    });
+    ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', () => el.classList.remove('autocompletado'));
+    });
+}
+
 // Devuelve true si la fecha (formato YYYY-MM-DD) corresponde al dia de hoy
 // segun la zona horaria LOCAL del navegador. Importante usar local y no UTC
 // porque a la noche (Argentina UTC-3) el dia UTC ya cambio y rompe el chequeo.
@@ -380,7 +563,9 @@ window.onload = function() {
     const hoy = new Date().toISOString().split('T')[0];
     document.getElementById('fecha_hecho').setAttribute('max', hoy);
     emailjs.init(EMAILJS_PUBLIC_KEY);
-    ['dni_chofer', 'tel_chofer', 'prop_dni', 'prop_tel', 'cp'].forEach(aplicarValidacionEstricta);
+    ['dni_chofer', 'tel_chofer', 'prop_dni', 'prop_tel', 'cp', 'cp_chofer'].forEach(aplicarValidacionEstricta);
+    initAutocompletadoChofer();
+    initAutocompletadoChoferInterno();
     document.getElementById('es_propietario').addEventListener('change', function() {
         document.getElementById('datos_propietario').classList.toggle('hidden', this.value === 'SI');
     });
@@ -758,6 +943,11 @@ function precargarFormulario(s) {
     setVal2('domicilio_chofer', s.domicilio_chofer);
     setVal2('loc_chofer', s.loc_chofer);
     setVal2('prov_chofer', s.prov_chofer);
+    setVal2('cp_chofer', s.cp_chofer);
+    // En ampliacion respetamos lo que se cargo la primera vez: los campos
+    // quedan sin marca de "autocompletado" asi la busqueda por DNI no los pisa.
+    limpiarAutocompletado();
+    ultimoDniBuscado = String(s.dni_chofer || '').replace(/\D/g, '');
 
     // Paso 3
     setVal2('danos_propios', s.danos_propios);
@@ -905,6 +1095,11 @@ async function enviarSiniestro() {
             domicilio_chofer: val('domicilio_chofer'),
             loc_chofer: val('loc_chofer'),
             prov_chofer: val('prov_chofer'),
+            cp_chofer: val('cp_chofer'),
+            // Trazabilidad: si el conductor salio del padron guardamos legajo y
+            // operacion para poder cruzar siniestralidad por OP en el reporte.
+            legajo_chofer: (choferEncontrado && choferEncontrado.legajo) || '',
+            op_chofer: (choferEncontrado && choferEncontrado.op) || '',
             link_pdf: linkFinal,
             danos_propios: val('danos_propios'),
             relato: val('descripcion'),
@@ -965,6 +1160,7 @@ async function enviarSiniestro() {
 
         setVal('p-c-nom', val('nombre_chofer')); setVal('p-c-dni', val('dni_chofer'));
         setVal('p-c-tel', val('tel_chofer')); setVal('p-c-dom', val('domicilio_chofer') + ", " + val('loc_chofer'));
+        setVal('p-cp', val('cp_chofer'));
 
         setVal('p-t-p-no', val('prop_nombre') || val('nombre_chofer'));
         setVal('p-t-p-dn', val('prop_dni')); setVal('p-t-ma', val('marca_tercero'));

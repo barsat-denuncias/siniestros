@@ -101,6 +101,32 @@ label {
     margin-top: 10px;
 }
 
+/* ===== Autocompletado del conductor por DNI (Paso 2) ===== */
+.dni-status {
+    font-size: 12px;
+    margin: -8px 0 10px;
+    min-height: 16px;
+    text-align: left;
+    line-height: 1.35;
+}
+.dni-status.buscando { color: #666; font-style: italic; }
+.dni-status.ok      { color: #0f5132; font-weight: bold; }
+.dni-status.aviso   { color: #9c5700; }
+
+/* Campo rellenado automaticamente desde el padron */
+input.autocompletado {
+    background: #f4fbf6;
+    border-color: #28a745 !important;
+}
+
+.campo-hint {
+    font-size: 11px;
+    color: #9c5700;
+    margin: -8px 0 10px;
+    text-align: left;
+    line-height: 1.35;
+}
+
 /* Notificaciones Inline */
 #status-msg { padding: 15px; margin-bottom: 20px; border-radius: 8px; font-weight: bold; display: none; text-align: center; }
 .status-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }

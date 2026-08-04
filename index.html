@@ -74,10 +74,14 @@
             </div>
 
             <div class="step hidden" id="step-2">
+                <p style="font-size:12px; color:#666; margin:0 0 8px 0;">Escribí el DNI y los datos del conductor se completan solos.</p>
+                <input type="text" id="dni_chofer" placeholder="DNI Conductor*" required maxlength="10" inputmode="numeric" autocomplete="off">
+                <p id="dni-status" class="dni-status"></p>
+
                 <input type="text" id="nombre_chofer" placeholder="Apellido y Nombre Conductor*" required maxlength="60">
-                <input type="text" id="dni_chofer" placeholder="DNI Conductor*" required maxlength="10">
                 <input type="text" id="tel_chofer" placeholder="Teléfono de contacto*" required maxlength="15">
                 <input type="text" id="domicilio_chofer" placeholder="Domicilio Conductor*" required maxlength="80">
+                <input type="text" id="cp_chofer" placeholder="Código Postal Conductor*" required maxlength="10">
                 <input type="text" id="loc_chofer" placeholder="Localidad Conductor*" required maxlength="40">
                 <input type="text" id="prov_chofer" placeholder="Provincia Conductor*" required maxlength="40">
                 <button onclick="validarYPasar(3)">Siguiente</button>
@@ -147,8 +151,9 @@
                     <input type="date" id="i_fecha" required>
                     <input type="time" id="i_hora" required>
                 </div>
+                <input type="text" id="i_dni_chofer" placeholder="DNI Conductor" required maxlength="9" inputmode="numeric" autocomplete="off">
+                <p id="i-dni-status" class="dni-status"></p>
                 <input type="text" id="i_nombre_chofer" placeholder="Apellido y Nombre Conductor" required maxlength="50">
-                <input type="text" id="i_dni_chofer" placeholder="DNI Conductor" required maxlength="9" inputmode="numeric">
                 <input type="text" id="i_tel_chofer" placeholder="Teléfono Conductor" required maxlength="15" inputmode="numeric">
                 <input type="text" id="i_patente2" placeholder="Vehículo afectado" required maxlength="7">
                 <p id="i_patente2_status" style="font-size: 11px; margin: -8px 0 8px; min-height: 14px;"></p>
