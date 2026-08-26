@@ -872,8 +872,8 @@ function mostrarPasoIntermedio(siniestros) {
             <div class="sin-card ${ampliable ? 'ampliable' : ''}">
                 <div class="sin-info">
                     <strong>SN: ${esc(s.nro_siniestro)}</strong> ${chipTipo}<br>
-                    Siniestro: ${esc(fmtFecha(s.fecha_hecho))} · Cargada: ${esc(fmtFecha(s.fecha_carga))}<br>
-                    Conductor: ${esc(s.nombre_chofer || 'S/D')}
+                    Dominio: ${esc(s.dominio || '')}<br>
+                    Siniestro: ${esc(fmtFecha(s.fecha_hecho))} ${esc(s.hora_hecho || '')} · Cargada: ${esc(fmtFecha(s.fecha_carga))}
                     ${hintNoAmpliable}
                 </div>
                 ${ampliable ? `<button class="btn-ampliar" onclick="iniciarAmpliacion(${idx})">Ampliar esta denuncia</button>` : ''}
@@ -1049,12 +1049,33 @@ async function cargarFotosViejas(idDenuncia) {
 // ============================================================================
 // AMPLIACIÓN: precarga del formulario con los datos de la denuncia anterior
 // ============================================================================
-function iniciarAmpliacion(idx) {
-    const s = window.__siniestrosPrevios && window.__siniestrosPrevios[idx];
-    if (!s) {
+async function iniciarAmpliacion(idx) {
+    const resumen = window.__siniestrosPrevios && window.__siniestrosPrevios[idx];
+    if (!resumen) {
         showStatus("No se pudo recuperar la denuncia anterior. Refresque y reintente.", "error");
         return;
     }
+
+    // La pantalla anterior solo tiene numero y fechas: los datos personales no
+    // viajan hasta aca. Se piden ahora, y el backend solo los entrega si la
+    // denuncia es de hoy, es externa y la patente coincide.
+    let s;
+    try {
+        const resp = await rpc('traer_denuncia_ampliable', {
+            p_id: resumen.id,
+            p_patente: unidad.DOMINIO,
+            p_chasis_suffix: unidad.__chasis_suffix || ''
+        });
+        if (!resp || !resp.ok) {
+            showStatus("Esta denuncia ya no se puede ampliar. Hacé una denuncia nueva.", "error");
+            return;
+        }
+        s = resp.denuncia;
+    } catch (err) {
+        showStatus("No se pudo recuperar la denuncia: " + err.message, "error");
+        return;
+    }
+
     modoAmpliacion = { id: s.id, nro_siniestro: s.nro_siniestro };
     limpiarStatus();
     fotosViejasMantenidas = [];
