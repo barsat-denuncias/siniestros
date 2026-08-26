@@ -6,7 +6,7 @@
     <title>App Siniestros</title>
     <!-- El ?v= evita que el navegador sirva una version cacheada.
          Al cambiar app.js o style.css, subir el numero. -->
-    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="stylesheet" href="style.css?v=8">
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -112,20 +112,39 @@
             </div>
 
             <div class="step hidden" id="step-4">
+                <p class="subtitulo-bloque">Vehículo del tercero</p>
                 <input type="text" id="patente_tercero" placeholder="Dominio Tercero*" required maxlength="10">
                 <input type="text" id="marca_tercero" placeholder="Marca y Modelo Tercero*" required maxlength="50">
                 <input type="text" id="seguro_tercero" placeholder="Compañía de Seguros*" required maxlength="40">
                 <input type="text" id="poliza_tercero" placeholder="Nro de Póliza*" required maxlength="20">
-                <textarea id="danos_tercero" placeholder="Daños en el tercero*" required maxlength="500"></textarea>
-                <label>¿El conductor es el propietario?*</label>
+                <textarea id="danos_tercero" class="txt-chico" placeholder="Daños en el tercero*" required maxlength="500"></textarea>
+
+                <p class="subtitulo-bloque">Conductor del tercero</p>
+                <input type="text" id="nombre_cond_tercero" placeholder="Apellido y Nombre del Conductor Tercero*" required maxlength="60">
+                <input type="text" id="dni_cond_tercero" placeholder="DNI del Conductor Tercero*" required maxlength="10">
+                <input type="text" id="tel_cond_tercero" placeholder="Teléfono del Conductor Tercero*" required maxlength="15">
+
+                <label>¿El conductor es el propietario del vehículo?*</label>
                 <select id="es_propietario">
                     <option value="SI">SÍ</option>
                     <option value="NO">NO</option>
                 </select>
                 <div id="datos_propietario" class="hidden">
-                    <input type="text" id="prop_nombre" placeholder="Nombre Propietario" maxlength="60">
-                    <input type="text" id="prop_dni" placeholder="Documento Propietario" maxlength="10">
-                    <input type="text" id="prop_tel" placeholder="Teléfono Propietario" maxlength="15">
+                    <p class="subtitulo-bloque">Propietario del vehículo</p>
+                    <input type="text" id="prop_nombre" placeholder="Apellido y Nombre del Propietario" maxlength="60">
+                    <input type="text" id="prop_dni" placeholder="Documento del Propietario" maxlength="10">
+                    <input type="text" id="prop_tel" placeholder="Teléfono del Propietario" maxlength="15">
+                </div>
+
+                <p class="subtitulo-bloque">Lesionados</p>
+                <label>¿Hubo personas lesionadas?*</label>
+                <select id="hubo_lesionados" onchange="actualizarLesionados()">
+                    <option value="NO">NO</option>
+                    <option value="SI">SÍ</option>
+                </select>
+                <div id="bloque-lesionados" class="hidden">
+                    <div id="lista-lesionados"></div>
+                    <button type="button" class="btn-croquis" onclick="agregarLesionado()" style="width:100%; margin-bottom:12px;">+ Agregar otro lesionado</button>
                 </div>
                 <button onclick="validarYPasar(5)">Siguiente</button>
                 <button class="btn-secundario" onclick="cambiarPaso(3)">Volver</button>
@@ -290,6 +309,14 @@
             <div style="height: 296mm; padding: 12mm 25mm; box-sizing: border-box; position: relative; display: flex; flex-direction: column;">
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 8px; font-size: 11pt;">6 &nbsp; DETALLE DEL OTRO VEHÍCULO</div>
                 <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 6px;">
+                    <div><b>Conductor:</b> <span id="p-t-c-no"></span></div>
+                    <div><b>DNI:</b> <span id="p-t-c-dn"></span></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 6px;">
+                    <div><b>Teléfono:</b> <span id="p-t-c-tel"></span></div>
+                    <div><b>Es propietario:</b> <span id="p-t-es-prop"></span></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 6px;">
                     <div><b>Propietario:</b> <span id="p-t-p-no"></span></div>
                     <div><b>DNI:</b> <span id="p-t-p-dn"></span></div>
                 </div>
@@ -307,20 +334,24 @@
                 <div style="margin-bottom: 4px;"><b>Tipo de Accidente:</b> <span id="p-7-tipo"></span></div>
                 <div style="margin-bottom: 4px;"><b>Lugar:</b> <span id="p-7-lugar"></span></div>
                 <div style="margin-bottom: 15px;"><b>Colisión con:</b> <span id="p-7-colision"></span></div>
-                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-top: 10px; margin-bottom: 15px; font-size: 11pt;">8 &nbsp; CROQUIS Y RELATO</div>
+                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-top: 10px; margin-bottom: 8px; font-size: 11pt;">8 &nbsp; LESIONADOS</div>
+                <div id="p-lesionados" style="font-size: 9pt; margin-bottom: 15px;"></div>
+
+                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-top: 10px; margin-bottom: 15px; font-size: 11pt;">9 &nbsp; CROQUIS Y RELATO</div>
                 <div style="display: flex; gap: 20px; align-items: flex-start; margin-top: 5px; margin-bottom: 25px;">
                     <div style="width: 220px; height: 220px; position: relative;"><img id="p-croquis" style="width: 100%; height: 100%; display: block;" /></div>
                     <div style="flex: 1;"><div style="font-weight: bold; margin-bottom: 5px;">DETALLES DEL SINIESTRO:</div><div id="p-relato" style="font-size: 9pt; white-space: pre-wrap; min-height: 100px; line-height: 1.4; border: 1px solid #eee; padding: 10px;"></div></div>
                 </div>
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-top: 10px; margin-bottom: 5px; font-size: 11pt;">REGISTRO FOTOGRÁFICO</div>
                 <div id="p-lista-fotos" style="font-size: 8pt; color: #444; margin-top: 5px; border-top: 1px solid #ccc; padding-top: 5px; line-height: 1.1; margin-bottom: 25px;"></div>
-                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-top: 15px; margin-bottom: 15px; font-size: 11pt;">9 &nbsp; DATOS DEL DENUNCIANTE</div>
+                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-top: 15px; margin-bottom: 15px; font-size: 11pt;">10 &nbsp; DATOS DEL DENUNCIANTE</div>
                 <div style="display: grid; grid-template-columns: 1.4fr 1fr; margin-bottom: 4px; font-size: 8.5pt;"><div><b>Nombre y Apellido:</b> </div><div><b>Género:</b> </div></div>
                 <div style="display: grid; grid-template-columns: 1.4fr 1fr; margin-bottom: 4px; font-size: 8.5pt;"><div><b>Tipo y Nº documento:</b> </div><div><b>Teléfono:</b> </div></div>
                 <div style="display: grid; grid-template-columns: 1.4fr 1fr; margin-bottom: 4px; font-size: 8.5pt;"><div><b>Domicilio:</b> </div><div><b>CP:</b> </div></div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; margin-bottom: 4px; font-size: 8.5pt;"><div><b>Localidad:</b> </div><div><b>Provincia:</b> </div><div><b>País:</b> ARGENTINA</div></div>
                 <div style="margin-top: auto; border-top: 1px solid #000; padding-top: 10px; margin-bottom: 10mm;"><p style="font-size: 8pt; margin-bottom: 50px;">Los datos consignados tienen carácter de declaración jurada.</p><div style="display: flex; justify-content: space-around; font-size: 9.5pt;"><div style="text-align: center; border-top: 1.5px solid #000; width: 200px; padding-top: 8px;"><b>Firma</b></div><div style="text-align: center; border-top: 1.5px solid #000; width: 200px; padding-top: 8px;"><b>Aclaración</b></div></div></div>
             </div>
+
         </div>
 
         <div id="pdf-template-interno" style="width: 210mm; background: white; color: black; font-family: Arial, sans-serif; font-size: 10pt; margin: 0; padding: 0; line-height: 1.5;">
@@ -371,6 +402,6 @@
             </div>
         </div>
     </div>
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=8"></script>
 </body>
 </html>

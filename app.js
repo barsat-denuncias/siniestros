@@ -85,6 +85,75 @@ function fechaAR(valor) {
     return String(valor);
 }
 
+// ============================================================================
+// TOKEN ANTI-ADIVINANZA PARA LOS ARCHIVOS
+// El bucket 'denuncias' es publico: cualquiera que sepa la URL exacta puede
+// abrir el archivo. Antes las carpetas eran PATENTE_<timestamp>, imposibles de
+// adivinar. Ahora son PATENTE_SN12, que se adivina solo.
+// Como los PDF tienen DNI, domicilio y telefono del chofer, se le agrega un
+// token al azar al NOMBRE DEL ARCHIVO. La carpeta sigue siendo legible
+// (PATENTE_SN12) pero el archivo no se puede adivinar.
+// Listar el contenido de la carpeta no es posible: el bucket no tiene policy
+// de SELECT para anon, solo de INSERT.
+// ============================================================================
+// ============================================================================
+// COMPRESION DE FOTOS
+// Una foto de celular pesa 3-5 MB. Redimensionada a 1600px de lado mayor queda
+// en 250-400 KB, sin perder detalle para ver un choque.
+// Esto ACELERA la carga: comprimir tarda milisegundos, subir 4 MB por datos
+// moviles tarda varios segundos. Ademas alcanza para muchas mas denuncias en
+// el mismo espacio.
+// Si algo falla, se sube el archivo original: nunca bloquea la carga.
+// ============================================================================
+const FOTO_LADO_MAX = 1600;
+const FOTO_CALIDAD  = 0.72;
+
+function comprimirImagen(file) {
+    return new Promise((resolve) => {
+        // Si ya es chica, no vale la pena procesarla
+        if (file.size <= 600 * 1024) { resolve(file); return; }
+
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+
+        img.onload = () => {
+            try {
+                let { width: w, height: h } = img;
+                const escala = Math.min(1, FOTO_LADO_MAX / Math.max(w, h));
+                w = Math.round(w * escala);
+                h = Math.round(h * escala);
+
+                const cv = document.createElement('canvas');
+                cv.width = w; cv.height = h;
+                const cx = cv.getContext('2d');
+                cx.fillStyle = '#fff';       // por si la imagen tiene transparencia
+                cx.fillRect(0, 0, w, h);
+                cx.drawImage(img, 0, 0, w, h);
+                URL.revokeObjectURL(url);
+
+                cv.toBlob(
+                    (blob) => resolve(blob && blob.size ? blob : file),
+                    'image/jpeg',
+                    FOTO_CALIDAD
+                );
+            } catch {
+                URL.revokeObjectURL(url);
+                resolve(file);
+            }
+        };
+
+        // El navegador no pudo leerla (HEIC viejo, archivo raro): va el original
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+        img.src = url;
+    });
+}
+
+function tokenArchivo() {
+    const b = new Uint8Array(6);
+    crypto.getRandomValues(b);
+    return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+}
+
 // Fecha de hoy en formato argentino, sin depender del locale del navegador.
 function hoyAR() {
     const d = new Date();
@@ -140,6 +209,17 @@ function showStatus(msg, type) {
     el.className = `status-${type}`;
     el.style.display = 'block';
     window.scrollTo(0,0);
+}
+
+// El cartel de estado es global (esta arriba de todas las pantallas). Si no se
+// limpia, un "Unidad no encontrada" del paso inicial queda colgado hasta el
+// final de la carga. Se borra al arrancar cualquier flujo.
+function limpiarStatus() {
+    const el = document.getElementById('status-msg');
+    if (!el) return;
+    el.innerText = '';
+    el.className = '';
+    el.style.display = 'none';
 }
 
 // Flag global para que el modal sepa a que envio despachar (externo/ampliacion vs interno).
@@ -718,6 +798,7 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
     e.preventDefault();
     const btn = e.target.querySelector('button');
     btn.innerText = "Buscando..."; btn.disabled = true;
+    limpiarStatus();   // borra el error del intento anterior
     const patente = document.getElementById('patente').value.trim().toUpperCase();
 
     try {
@@ -828,6 +909,7 @@ function expandirPrevias(btn) {
 // formulario externo via iniciarAmpliacion().
 function iniciarFormulario() {
     modoAmpliacion = null;
+    limpiarStatus();
     document.getElementById('pantalla-validacion').classList.add('hidden');
     document.getElementById('pantalla-seleccion').classList.add('hidden');
     document.getElementById('pantalla-formulario').classList.add('hidden');
@@ -838,11 +920,20 @@ function iniciarFormulario() {
 // Flujo EXTERNO (denuncia con tercero) — lo que existia antes.
 function iniciarFlujoExterno() {
     modoAmpliacion = null;
+    limpiarStatus();
     fotosViejasMantenidas = [];
     limpiarPreviewsFotosViejas();
     actualizarBannerAmpliacion();
     resetearCroquis();
     resetearPaso2();
+    // Reset de lesionados por si quedo algo de una carga anterior
+    const selLes = document.getElementById('hubo_lesionados');
+    if (selLes) selLes.value = 'NO';
+    const listaLes = document.getElementById('lista-lesionados');
+    if (listaLes) listaLes.innerHTML = '';
+    contadorLesionados = 0;
+    const bloqueLes = document.getElementById('bloque-lesionados');
+    if (bloqueLes) bloqueLes.classList.add('hidden');
     document.getElementById('pantalla-tipo-siniestro').classList.add('hidden');
     document.getElementById('pantalla-formulario-interno').classList.add('hidden');
     document.getElementById('pantalla-formulario').classList.remove('hidden');
@@ -852,6 +943,7 @@ function iniciarFlujoExterno() {
 // Flujo INTERNO (constancia entre dos vehiculos nuestros) — 2 pasos cortos.
 function iniciarFlujoInterno() {
     modoAmpliacion = null;
+    limpiarStatus();
     document.getElementById('pantalla-tipo-siniestro').classList.add('hidden');
     document.getElementById('pantalla-formulario').classList.add('hidden');
     document.getElementById('pantalla-formulario-interno').classList.remove('hidden');
@@ -930,9 +1022,15 @@ async function cargarFotosViejas(idDenuncia) {
             p_chasis_suffix: unidad.__chasis_suffix || ''
         });
         if (!Array.isArray(fotos)) return;
+        // El croquis no es un adjunto: se dibuja aparte y tiene su propio lugar
+        // en el PDF. El backend ya lo filtra; esto cubre denuncias viejas.
+        const soloFotos = fotos.filter(f => {
+            const base = (f.name || '').split('/').pop().toLowerCase();
+            return !base.startsWith('croquis');
+        });
         // Numerar dentro de cada categoria para los labels del PDF
         const counts = {};
-        fotosViejasMantenidas = fotos.map(f => {
+        fotosViejasMantenidas = soloFotos.map(f => {
             const cat = categoriaDeFoto(f.name);
             counts[cat] = (counts[cat] || 0) + 1;
             return {
@@ -958,6 +1056,7 @@ function iniciarAmpliacion(idx) {
         return;
     }
     modoAmpliacion = { id: s.id, nro_siniestro: s.nro_siniestro };
+    limpiarStatus();
     fotosViejasMantenidas = [];
     limpiarPreviewsFotosViejas();
     resetearCroquis();
@@ -1022,6 +1121,117 @@ function setearProvinciaLocalidad(provincia, localidad) {
     }
 }
 
+// ============================================================================
+// LESIONADOS (Paso 4)
+// Se guardan como array en la columna jsonb "lesionados" de Siniestros, asi
+// se pueden cargar varios sin tocar el esquema.
+// ============================================================================
+let contadorLesionados = 0;
+
+function actualizarLesionados() {
+    const sel = document.getElementById('hubo_lesionados');
+    const bloque = document.getElementById('bloque-lesionados');
+    if (!sel || !bloque) return;
+    const hay = sel.value === 'SI';
+    bloque.classList.toggle('hidden', !hay);
+    const lista = document.getElementById('lista-lesionados');
+    if (hay && lista && lista.children.length === 0) {
+        agregarLesionado();
+    }
+    if (!hay && lista) {
+        lista.innerHTML = '';
+        contadorLesionados = 0;
+    }
+}
+
+function agregarLesionado(datos) {
+    const lista = document.getElementById('lista-lesionados');
+    if (!lista) return;
+    const n = ++contadorLesionados;
+    const d = datos || {};
+    const esc = (s) => String(s == null ? '' : s).replace(/"/g, '&quot;');
+
+    const card = document.createElement('div');
+    card.className = 'lesionado-card';
+    card.dataset.lesionado = '1';
+    card.innerHTML = `
+        <div class="lesionado-titulo">
+            <span>Lesionado ${n}</span>
+            <button type="button" class="quitar-lesionado">Quitar</button>
+        </div>
+        <input type="text" data-campo="apellido"  placeholder="Apellido*"          maxlength="40" value="${esc(d.apellido)}">
+        <input type="text" data-campo="nombre"    placeholder="Nombre*"            maxlength="40" value="${esc(d.nombre)}">
+        <input type="text" data-campo="dni"       placeholder="DNI*"               maxlength="10" inputmode="numeric" value="${esc(d.dni)}">
+        <select data-campo="genero">
+            <option value="">Género*</option>
+            <option value="MASCULINO">Masculino</option>
+            <option value="FEMENINO">Femenino</option>
+            <option value="OTRO">Otro</option>
+        </select>
+        <input type="text" data-campo="domicilio" placeholder="Domicilio*"         maxlength="80" value="${esc(d.domicilio)}">
+        <input type="text" data-campo="telefono"  placeholder="Teléfono*"          maxlength="15" value="${esc(d.telefono)}">
+        <input type="text" data-campo="lesion"    placeholder="Tipo de lesión*"    maxlength="80" value="${esc(d.lesion)}">
+        <input type="text" data-campo="hospital"  placeholder="Hospital donde se atendió*" maxlength="80" value="${esc(d.hospital)}">
+    `;
+    if (d.genero) {
+        const sg = card.querySelector('[data-campo="genero"]');
+        if (sg) sg.value = d.genero;
+    }
+    card.querySelector('.quitar-lesionado').addEventListener('click', () => {
+        card.remove();
+        renumerarLesionados();
+        // Si se quitaron todos, volvemos el desplegable a NO
+        const lista2 = document.getElementById('lista-lesionados');
+        if (lista2 && lista2.children.length === 0) {
+            const sel = document.getElementById('hubo_lesionados');
+            if (sel) sel.value = 'NO';
+            actualizarLesionados();
+        }
+    });
+    lista.appendChild(card);
+}
+
+function renumerarLesionados() {
+    const cards = document.querySelectorAll('#lista-lesionados .lesionado-card');
+    contadorLesionados = cards.length;
+    cards.forEach((c, i) => {
+        const t = c.querySelector('.lesionado-titulo span');
+        if (t) t.innerText = `Lesionado ${i + 1}`;
+    });
+}
+
+// Devuelve el array listo para el payload. Solo se incluyen los que tengan
+// al menos apellido o DNI cargado.
+function leerLesionados() {
+    const sel = document.getElementById('hubo_lesionados');
+    if (!sel || sel.value !== 'SI') return [];
+    const out = [];
+    document.querySelectorAll('#lista-lesionados .lesionado-card').forEach(card => {
+        const o = {};
+        card.querySelectorAll('[data-campo]').forEach(inp => {
+            o[inp.dataset.campo] = (inp.value || '').trim().toUpperCase();
+        });
+        if (o.apellido || o.dni) out.push(o);
+    });
+    return out;
+}
+
+// Valida que los lesionados cargados esten completos. Devuelve true si esta ok.
+function validarLesionados() {
+    const sel = document.getElementById('hubo_lesionados');
+    if (!sel || sel.value !== 'SI') return true;
+    const cards = document.querySelectorAll('#lista-lesionados .lesionado-card');
+    if (cards.length === 0) return true;
+    let ok = true;
+    cards.forEach(card => {
+        card.querySelectorAll('[data-campo]').forEach(inp => {
+            if (!inp.value.trim()) { inp.style.borderColor = 'red'; ok = false; }
+            else { inp.style.borderColor = '#ddd'; }
+        });
+    });
+    return ok;
+}
+
 // Setea es_propietario y dispara el toggle de los campos del propietario
 function setearEsPropietario(propNombre) {
     const sel = document.getElementById('es_propietario');
@@ -1069,10 +1279,23 @@ function precargarFormulario(s) {
     setVal2('seguro_tercero', s.seguro_tercero);
     setVal2('poliza_tercero', s.poliza_tercero);
     setVal2('danos_tercero', s.danos_tercero);
+    setVal2('nombre_cond_tercero', s.nombre_cond_tercero);
+    setVal2('dni_cond_tercero', s.dni_cond_tercero);
+    setVal2('tel_cond_tercero', s.tel_cond_tercero);
     setearEsPropietario(s.prop_nombre);
     setVal2('prop_nombre', s.prop_nombre);
     setVal2('prop_dni', s.prop_dni);
     setVal2('prop_tel', s.prop_tel);
+
+    // Lesionados: reconstruimos las fichas desde el jsonb guardado
+    const selLes = document.getElementById('hubo_lesionados');
+    const listaLes = document.getElementById('lista-lesionados');
+    if (listaLes) { listaLes.innerHTML = ''; contadorLesionados = 0; }
+    const previos = Array.isArray(s.lesionados) ? s.lesionados : [];
+    if (selLes) selLes.value = (s.hubo_lesionados === 'SI' || previos.length) ? 'SI' : 'NO';
+    const bloqueLes = document.getElementById('bloque-lesionados');
+    if (bloqueLes) bloqueLes.classList.toggle('hidden', !(selLes && selLes.value === 'SI'));
+    previos.forEach(l => agregarLesionado(l));
 }
 
 function cambiarPaso(paso) {
@@ -1103,25 +1326,31 @@ function validarYPasar(proximoPaso) {
         valido = false;
     }
 
+    // Al salir del paso 4: los lesionados cargados tienen que estar completos
+    if (proximoPaso === 5 && !validarLesionados()) {
+        valido = false;
+    }
+
     if(valido) cambiarPaso(proximoPaso);
 }
 
 // ============================================================================
 // ENVÍO DE SINIESTRO
-// Flujo:
-//   1. Subir fotos al bucket
-//   2. Llamar RPC crear_denuncia (nuevo) o ampliar_denuncia (ampliacion)
-//   3. Llenar template con el SN asignado y generar PDF
-//   4. Subir PDF al bucket
-//   5. Enviar mail por EmailJS (con flag tipo_envio para distinguir nueva vs ampliacion)
+// Flujo (el orden importa):
+//   1. Crear/ampliar la denuncia en la base -> devuelve el numero de siniestro
+//   2. Con ese SN se arma el nombre de la carpeta: PATENTE_SN
+//   3. Subir fotos y croquis a esa carpeta
+//   4. Llenar template, generar PDF y subirlo
+//   5. Guardar en la denuncia los links del PDF y del croquis
+//   6. Enviar mail por EmailJS
+//
+// Antes la carpeta se llamaba PATENTE_timestamp y la denuncia se creaba en el
+// medio. Se invirtio para que el nombre de la carpeta sea rastreable contra el
+// numero de siniestro.
 // ============================================================================
 async function enviarSiniestro() {
     const btn = document.getElementById('btn-finalizar');
     btn.innerText = "Enviando..."; btn.disabled = true;
-    const ts = Date.now();
-    const folder = `${unidad.DOMINIO}_${ts}`;
-    const pdfPath = `${folder}/Denuncia_Final.pdf`;
-    const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
     const val = (id) => document.getElementById(id) ? document.getElementById(id).value.trim().toUpperCase() : "NO INFORMA";
 
     const getLocalidadFinal = () => {
@@ -1134,10 +1363,71 @@ async function enviarSiniestro() {
     const esAmpliacion = !!modoAmpliacion;
 
     try {
-        // 1. Armar el listado de fotos del PDF.
+        // ---- 1. Crear (o ampliar) la denuncia PRIMERO, para tener el SN ----
+        const payloadBase = {
+            fecha_hecho: val('fecha_hecho'),
+            hora_hecho: val('hora_hecho'),
+            nombre_chofer: val('nombre_chofer'),
+            dni_chofer: val('dni_chofer'),
+            tel_chofer: val('tel_chofer'),
+            domicilio_chofer: val('domicilio_chofer'),
+            loc_chofer: val('loc_chofer'),
+            prov_chofer: val('prov_chofer'),
+            cp_chofer: val('cp_chofer'),
+            legajo_chofer: (choferEncontrado && choferEncontrado.legajo) || '',
+            op_chofer: (choferEncontrado && choferEncontrado.op) || '',
+            danos_propios: val('danos_propios'),
+            relato: val('descripcion'),
+            patente_tercero: val('patente_tercero'),
+            marca_tercero: val('marca_tercero'),
+            seguro_tercero: val('seguro_tercero'),
+            poliza_tercero: val('poliza_tercero'),
+            danos_tercero: val('danos_tercero'),
+            nombre_cond_tercero: val('nombre_cond_tercero'),
+            dni_cond_tercero: val('dni_cond_tercero'),
+            tel_cond_tercero: val('tel_cond_tercero'),
+            prop_nombre: val('prop_nombre'),
+            prop_dni: val('prop_dni'),
+            prop_tel: val('prop_tel'),
+            hubo_lesionados: val('hubo_lesionados'),
+            lesionados: leerLesionados(),
+            provincia: val('provincia'),
+            localidad: localidadFinal,
+            cp: val('cp'),
+            calle_interseccion: `${val('calle')} e ${val('interseccion')}`,
+            dominio_asegurado: unidad.DOMINIO
+        };
+
+        let resultado;
+        if (esAmpliacion) {
+            resultado = await rpc('ampliar_denuncia', {
+                p_id: modoAmpliacion.id,
+                p_patente: unidad.DOMINIO,
+                p_chasis_suffix: unidad.__chasis_suffix || '',
+                p_payload: payloadBase
+            });
+        } else {
+            resultado = await rpc('crear_denuncia', { p_payload: payloadBase });
+        }
+        if (!resultado || !resultado.success) {
+            throw new Error(esAmpliacion ? "Fallo al ampliar la denuncia." : "Fallo al crear denuncia en la base.");
+        }
+        nroSiniestroFinal = resultado.nro_siniestro;
+        const idDenuncia = resultado.id;
+
+        // ---- 2. Carpeta con el numero de siniestro ----
+        // En una ampliacion los archivos van a una subcarpeta para no chocar
+        // con los nombres de la carga original (el bucket no permite sobrescribir).
+        const carpetaBase = `${unidad.DOMINIO}_${nroSiniestroFinal}`;
+        const folder = esAmpliacion ? `${carpetaBase}/ampliacion_${Date.now()}` : carpetaBase;
+        const tk = tokenArchivo();   // evita que el PDF sea adivinable
+        const pdfPath = `${folder}/Denuncia_Final_${tk}.pdf`;
+        const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
+
+        // ---- 3. Armar el listado de fotos del PDF ----
         //    - Arrancamos con las VIEJAS que el usuario mantuvo (solo en ampliacion).
         //      No se vuelven a subir, se reusa la URL original.
-        //    - Despues subimos las NUEVAS al folder nuevo y las concatenamos.
+        //    - Despues subimos las NUEVAS y las concatenamos.
         const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
         const links = [];
 
@@ -1157,28 +1447,32 @@ async function enviarSiniestro() {
             // Si ya hay viejas mantenidas de esta categoria, seguimos numerando
             const yaContados = links.filter(l => l.label.startsWith(c + '_')).length;
             for (let i = 0; i < f.length; i++) {
-                const path = `${folder}/${c}_${i}.jpg`;
-                // Sin x-upsert: el bucket solo tiene policy de INSERT (no UPDATE),
-                // y el folder es nuevo por timestamp asi que no hay colision.
+                const blob = await comprimirImagen(f[i]);
+                const path = `${folder}/${c}_${i}_${tokenArchivo()}.jpg`;
+                btn.innerText = "Subiendo fotos...";
                 const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
                     method: 'POST',
-                    headers: sbHeaders({ 'Content-Type': f[i].type }),
-                    body: f[i]
+                    headers: sbHeaders({ 'Content-Type': blob.type || 'image/jpeg' }),
+                    body: blob
                 });
                 if (!resUp.ok) throw new Error("Error al subir archivo fotográfico: " + c);
-                links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, label: `${c}_${yaContados + i + 1}` });
+                links.push({
+                    url: `${URL_API}/storage/v1/object/public/denuncias/${path}`,
+                    label: `${c}_${yaContados + i + 1}`
+                });
             }
         }
+        btn.innerText = "Enviando...";
 
-        // 1.b. Subir el croquis como PNG al bucket. El canvas ya tiene la rosa
-        // de los vientos + lo dibujado (sea trazo nuevo o el croquis viejo de la
-        // ampliacion). Si falla la subida, dejamos croquis_url vacio y seguimos.
+        // ---- 3.b. Subir el croquis como PNG. El canvas ya tiene la rosa de los
+        // vientos + lo dibujado (trazo nuevo o el croquis viejo de la ampliacion).
+        // Si falla la subida, dejamos croquis_url vacio y seguimos.
         let croquisUrl = '';
         if (croquisCanvas) {
             try {
                 const croquisBlob = await new Promise(r => croquisCanvas.toBlob(r, 'image/png'));
                 if (croquisBlob && croquisBlob.size > 0) {
-                    const croquisPath = `${folder}/croquis.png`;
+                    const croquisPath = `${folder}/croquis_${tokenArchivo()}.png`;
                     const resCroquis = await fetch(`${URL_API}/storage/v1/object/denuncias/${croquisPath}`, {
                         method: 'POST',
                         headers: sbHeaders({ 'Content-Type': 'image/png' }),
@@ -1195,57 +1489,7 @@ async function enviarSiniestro() {
             }
         }
 
-        // 2. Crear o ampliar denuncia
-        const payload = {
-            fecha_hecho: val('fecha_hecho'),
-            hora_hecho: val('hora_hecho'),
-            nombre_chofer: val('nombre_chofer'),
-            dni_chofer: val('dni_chofer'),
-            tel_chofer: val('tel_chofer'),
-            domicilio_chofer: val('domicilio_chofer'),
-            loc_chofer: val('loc_chofer'),
-            prov_chofer: val('prov_chofer'),
-            cp_chofer: val('cp_chofer'),
-            // Trazabilidad: si el conductor salio del padron guardamos legajo y
-            // operacion para poder cruzar siniestralidad por OP en el reporte.
-            legajo_chofer: (choferEncontrado && choferEncontrado.legajo) || '',
-            op_chofer: (choferEncontrado && choferEncontrado.op) || '',
-            link_pdf: linkFinal,
-            danos_propios: val('danos_propios'),
-            relato: val('descripcion'),
-            patente_tercero: val('patente_tercero'),
-            marca_tercero: val('marca_tercero'),
-            seguro_tercero: val('seguro_tercero'),
-            poliza_tercero: val('poliza_tercero'),
-            danos_tercero: val('danos_tercero'),
-            prop_nombre: val('prop_nombre'),
-            prop_dni: val('prop_dni'),
-            prop_tel: val('prop_tel'),
-            provincia: val('provincia'),
-            localidad: localidadFinal,
-            cp: val('cp'),
-            calle_interseccion: `${val('calle')} e ${val('interseccion')}`,
-            dominio_asegurado: unidad.DOMINIO,
-            croquis_url: croquisUrl
-        };
-
-        let resultado;
-        if (esAmpliacion) {
-            resultado = await rpc('ampliar_denuncia', {
-                p_id: modoAmpliacion.id,
-                p_patente: unidad.DOMINIO,
-                p_chasis_suffix: unidad.__chasis_suffix || '',
-                p_payload: payload
-            });
-        } else {
-            resultado = await rpc('crear_denuncia', { p_payload: payload });
-        }
-        if (!resultado || !resultado.success) {
-            throw new Error(esAmpliacion ? "Fallo al ampliar la denuncia." : "Fallo al crear denuncia en la base.");
-        }
-        nroSiniestroFinal = resultado.nro_siniestro;
-
-        // 3. Llenar template con el SN asignado
+        // ---- 4. Llenar template con el SN ya asignado ----
         setVal('p-sini-id', nroSiniestroFinal);
         setVal('p-v-aseg', unidad.ASEGURADORA_LEGAL || unidad.ASEGURADORA);
         setVal('p-v-pol', unidad.POLIZA);
@@ -1277,15 +1521,59 @@ async function enviarSiniestro() {
         setVal('p-c-prov', val('prov_chofer'));
         setVal('p-cp',     val('cp_chofer'));
 
-        setVal('p-t-p-no', val('prop_nombre') || val('nombre_chofer'));
-        setVal('p-t-p-dn', val('prop_dni')); setVal('p-t-ma', val('marca_tercero'));
+        // Conductor del tercero. OJO: antes esto caia por defecto en el nombre
+        // de NUESTRO chofer cuando se marcaba "el conductor es el propietario".
+        const esProp = val('es_propietario') === 'SI';
+        setVal('p-t-c-no',    val('nombre_cond_tercero'));
+        setVal('p-t-c-dn',    val('dni_cond_tercero'));
+        setVal('p-t-c-tel',   val('tel_cond_tercero'));
+        setVal('p-t-es-prop', esProp ? 'SI' : 'NO');
+        // Si el conductor es el propietario, se repiten sus datos; si no, van
+        // los del propietario que se cargaron aparte.
+        setVal('p-t-p-no', esProp ? val('nombre_cond_tercero') : val('prop_nombre'));
+        setVal('p-t-p-dn', esProp ? val('dni_cond_tercero')    : val('prop_dni'));
+        setVal('p-t-ma', val('marca_tercero'));
         setVal('p-t-mo', val('marca_tercero')); setVal('p-t-do', val('patente_tercero'));
         setVal('p-t-se', val('seguro_tercero')); setVal('p-t-po', val('poliza_tercero'));
         setVal('p-t-dan', val('danos_tercero'));
 
+        // Seccion 8: lesionados
+        const contLes = document.getElementById('p-lesionados');
+        if (contLes) {
+            const les = leerLesionados();
+            if (!les.length) {
+                contLes.innerHTML = '<span>No hubo personas lesionadas.</span>';
+            } else {
+                const escP = (s) => String(s == null ? '' : s)
+                    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                contLes.innerHTML = les.map((l, i) => `
+                    <div style="border:1px solid #ccc; padding:6px 8px; margin-bottom:6px;">
+                      <div style="font-weight:bold; margin-bottom:3px;">Lesionado ${i + 1}</div>
+                      <div style="display:grid; grid-template-columns:1.6fr 1fr 1fr;">
+                        <div><b>Apellido y Nombre:</b> ${escP(l.apellido)} ${escP(l.nombre)}</div>
+                        <div><b>DNI:</b> ${escP(l.dni)}</div>
+                        <div><b>Género:</b> ${escP(l.genero)}</div>
+                      </div>
+                      <div style="display:grid; grid-template-columns:1.6fr 1fr;">
+                        <div><b>Domicilio:</b> ${escP(l.domicilio)}</div>
+                        <div><b>Teléfono:</b> ${escP(l.telefono)}</div>
+                      </div>
+                      <div style="display:grid; grid-template-columns:1.6fr 1fr;">
+                        <div><b>Lesión:</b> ${escP(l.lesion)}</div>
+                        <div><b>Hospital:</b> ${escP(l.hospital)}</div>
+                      </div>
+                    </div>`).join('');
+            }
+        }
+
+        // Las fotos van como links, no impresas: el PDF tiene que ser liviano
+        // (AON maneja archivos de ~300 KB). Las imagenes quedan guardadas en el
+        // bucket y se abren desde el link.
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
-            fotoContainer.innerHTML = links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:15px;">• ${l.label}</a>`).join(' ');
+            fotoContainer.innerHTML = links.length
+                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:15px;">• ${l.label}</a>`).join(' ')
+                : '<span style="color:#666;">Sin fotos adjuntas.</span>';
         }
 
         // Inyectar el croquis dibujado por el usuario en el PDF
@@ -1294,7 +1582,7 @@ async function enviarSiniestro() {
             imgCroquis.src = croquisCanvas.toDataURL('image/png');
         }
 
-        // 4. Generar y subir PDF
+        // ---- 5. Generar y subir PDF ----
         await new Promise(r => setTimeout(r, 1200));
         const opt = { margin: 0, filename: `Denuncia_${unidad.DOMINIO}.pdf`, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
         const pdfBlob = await html2pdf().set(opt).from(document.getElementById('pdf-template')).output('blob');
@@ -1337,20 +1625,21 @@ async function enviarSiniestro() {
         if (!pdfOk) {
             throw new Error("Se cargó la denuncia pero falló al subir el PDF (" + ultimoError + "). Contactar administración.");
         }
-        // Si el path final difiere del original, actualizamos link_pdf del row
-        if (pathFinalPdf !== pdfPath) {
-            try {
-                await rpc('actualizar_link_pdf', {
-                    p_id: resultado.id,
-                    p_patente: unidad.DOMINIO,
-                    p_link_pdf: linkPdfFinalReal
-                });
-            } catch (e) {
-                console.warn('No se pudo actualizar link_pdf en DB:', e.message);
-            }
+        // ---- 6. Guardar en la denuncia los links del PDF y del croquis ----
+        // Como la denuncia se creo antes de subir los archivos, estos dos campos
+        // se completan recien ahora.
+        try {
+            await rpc('finalizar_denuncia', {
+                p_id: idDenuncia,
+                p_patente: unidad.DOMINIO,
+                p_link_pdf: linkPdfFinalReal,
+                p_croquis_url: croquisUrl
+            });
+        } catch (e) {
+            console.warn('No se pudieron guardar los links en la denuncia:', e.message);
         }
 
-        // 5. Enviar mail
+        // ---- 7. Enviar mail ----
         // Variables disponibles en el template de EmailJS:
         //   - asunto                       → "Alta SN20 AC963GK" o "Ampliacion SN20 AC963GK" (corto, listo para usar como subject)
         //   - link_pdf  / link             → URL del PDF
@@ -1480,6 +1769,7 @@ function abrirModalInterno() {
 
 // Volver desde un flujo (externo/interno) al selector inicial sin recargar la pagina.
 function volverASelector() {
+    limpiarStatus();
     document.getElementById('pantalla-formulario').classList.add('hidden');
     document.getElementById('pantalla-formulario-interno').classList.add('hidden');
     document.getElementById('pantalla-tipo-siniestro').classList.remove('hidden');
@@ -1488,10 +1778,6 @@ function volverASelector() {
 async function enviarSiniestroInterno() {
     const btn = document.getElementById('btn-finalizar-int');
     btn.innerText = "Enviando..."; btn.disabled = true;
-    const ts = Date.now();
-    const folder = `${unidad.DOMINIO}_INT_${ts}`;
-    const pdfPath = `${folder}/Constancia_Interna.pdf`;
-    const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
     const val = (id) => {
         const el = document.getElementById(id);
         return el ? el.value.trim().toUpperCase() : "";
@@ -1502,34 +1788,17 @@ async function enviarSiniestroInterno() {
     };
 
     try {
-        // 1. Subir fotos (todas con categoria "interno")
-        const links = [];
-        const files = document.getElementById('i_fotos').files;
-        for (let i = 0; i < files.length; i++) {
-            const path = `${folder}/interno_${i}.jpg`;
-            const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
-                method: 'POST',
-                headers: sbHeaders({ 'Content-Type': files[i].type }),
-                body: files[i]
-            });
-            if (!resUp.ok) throw new Error("Error al subir foto " + (i + 1));
-            links.push({
-                url: `${URL_API}/storage/v1/object/public/denuncias/${path}`,
-                label: `foto_${i + 1}`
-            });
-        }
-
-        // 2. Crear denuncia (tipo INTERNO). Aprovechamos los campos existentes:
-        //    patente_tercero  -> dominio del 2do vehiculo nuestro
-        //    marca_tercero    -> modelo del 2do vehiculo nuestro
-        //    danos_tercero    -> no se usa (el relato cubre ambos)
+        // ---- 1. Crear la constancia PRIMERO para tener el numero ----
+        // Aprovechamos los campos existentes:
+        //   patente_tercero -> dominio de la 2da unidad (si el daño fue contra otra unidad)
+        //   marca_tercero   -> modelo de esa unidad
+        //   bien_afectado   -> descripcion del bien, si fue contra algo de la empresa
         const payload = {
             fecha_hecho: valRaw('i_fecha'),
             hora_hecho: valRaw('i_hora'),
             nombre_chofer: val('i_nombre_chofer'),
             dni_chofer: val('i_dni_chofer'),
             tel_chofer: val('i_tel_chofer'),
-            link_pdf: linkFinal,
             relato: valRaw('i_relato'),
             patente_tercero: val('i_patente2'),
             marca_tercero: (unidad2 && unidad2.MODELO) ? unidad2.MODELO : '',
@@ -1549,8 +1818,34 @@ async function enviarSiniestroInterno() {
             throw new Error("Fallo al crear constancia en la base.");
         }
         nroSiniestroFinal = resultado.nro_siniestro;
+        const idDenuncia = resultado.id;
 
-        // 3. Llenar template PDF interno
+        // ---- 2. Carpeta con el numero de constancia ----
+        const folder = `${unidad.DOMINIO}_${nroSiniestroFinal}`;
+        const pdfPath = `${folder}/Constancia_Interna_${tokenArchivo()}.pdf`;
+        const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
+
+        // ---- 3. Subir fotos ----
+        const links = [];
+        const files = document.getElementById('i_fotos').files;
+        for (let i = 0; i < files.length; i++) {
+            const blob = await comprimirImagen(files[i]);
+            const path = `${folder}/interno_${i}_${tokenArchivo()}.jpg`;
+            btn.innerText = "Subiendo fotos...";
+            const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
+                method: 'POST',
+                headers: sbHeaders({ 'Content-Type': blob.type || 'image/jpeg' }),
+                body: blob
+            });
+            if (!resUp.ok) throw new Error("Error al subir foto " + (i + 1));
+            links.push({
+                url: `${URL_API}/storage/v1/object/public/denuncias/${path}`,
+                label: `foto_${i + 1}`
+            });
+        }
+        btn.innerText = "Enviando...";
+
+        // ---- 4. Llenar template PDF interno ----
         setVal('pi-sini-id', nroSiniestroFinal);
         setVal('pi-fecha-den', hoyAR());
         setVal('pi-fecha', fechaAR(valRaw('i_fecha')));
@@ -1587,7 +1882,7 @@ async function enviarSiniestroInterno() {
                 : '<span style="color:#888;">Sin fotos adjuntas.</span>';
         }
 
-        // 4. Generar y subir PDF (1 carilla)
+        // ---- 5. Generar y subir PDF (1 carilla) ----
         await new Promise(r => setTimeout(r, 1000));
         const opt = {
             margin: 0,
@@ -1628,21 +1923,24 @@ async function enviarSiniestroInterno() {
         if (!pdfOk) {
             throw new Error("Se cargó la constancia pero falló al subir el PDF (" + ultimoError + ").");
         }
-        if (pathFinalPdf !== pdfPath) {
-            try {
-                await rpc('actualizar_link_pdf', {
-                    p_id: resultado.id,
-                    p_patente: unidad.DOMINIO,
-                    p_link_pdf: linkPdfFinalReal
-                });
-            } catch (e) {
-                console.warn('No se pudo actualizar link_pdf:', e.message);
-            }
+        // ---- 6. Guardar el link del PDF en la constancia ----
+        try {
+            await rpc('finalizar_denuncia', {
+                p_id: idDenuncia,
+                p_patente: unidad.DOMINIO,
+                p_link_pdf: linkPdfFinalReal,
+                p_croquis_url: ''
+            });
+        } catch (e) {
+            console.warn('No se pudo guardar el link del PDF:', e.message);
         }
 
-        // 5. Enviar mail con asunto distinto
+        // ---- 7. Enviar mail con asunto distinto ----
+        const contraQue = (val('i_tipo_afectado') || 'UNIDAD') === 'BIEN'
+            ? valRaw('i_bien_afectado')
+            : val('i_patente2');
         const asuntoMail = "Constancia Interna - " + nroSiniestroFinal
-            + " - " + unidad.DOMINIO + " vs " + (val('i_patente2'));
+            + " - " + unidad.DOMINIO + " vs " + contraQue;
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
             asunto: asuntoMail,
             link_pdf: linkPdfFinalReal,
