@@ -226,10 +226,12 @@ function limpiarStatus() {
 // Antes reescribiamos el onclick del boton del modal, lo que rompia "ampliar" si el user
 // abria/cancelaba un modal interno antes. Ahora el boton llama siempre a un dispatcher.
 let modoInterno = false;
+let modoRC = false;
 
 function abrirModal() {
     // Texto distinto si estamos ampliando vs denuncia nueva
     modoInterno = false;
+    modoRC = false;
     const titulo = document.getElementById('modal-titulo');
     const detalle = document.getElementById('modal-detalle');
     if (modoAmpliacion) {
@@ -246,7 +248,8 @@ function cerrarModal() { document.getElementById('modal-confirmacion').classList
 // Dispatcher unico que decide a que flujo despacha segun modoInterno.
 function confirmarEnvioDispatcher() {
     cerrarModal();
-    if (modoInterno) enviarSiniestroInterno();
+    if (modoRC) enviarSiniestroRC();
+    else if (modoInterno) enviarSiniestroInterno();
     else enviarSiniestro();
 }
 
@@ -263,6 +266,131 @@ function aplicarValidacionEstricta(id) {
             input.value = val.replace(/[^0-9]/g, '');
         } else { input.value = val; }
     });
+}
+
+// ============================================================================
+// VINCULO TRACTOR / SEMIRREMOLQUE
+// Un tractor casi siempre lleva un semi, y cada uno tiene su propia poliza,
+// que puede ser distinta. Se hacen dos denuncias separadas, pero en cada una
+// tiene que constar la otra unidad.
+//   TRACTOR -> se pregunta si llevaba semi; si si, se pide el dominio
+//   SEMI    -> se pide el tractor que lo traccionaba
+//   CHASIS  -> no se pregunta nada (es la mayoria de la flota)
+// La poliza de la unidad vinculada se busca en la base, no la escribe nadie.
+// ============================================================================
+let vinculoDatos = null;      // {dominio, poliza, tipo}
+let timerVinculo = null;
+
+function statusVinculo(msg, tipo) {
+    const el = document.getElementById('vinculo-status');
+    if (!el) return;
+    el.innerText = msg || '';
+    el.className = 'dni-status' + (tipo ? ' ' + tipo : '');
+}
+
+// Configura el bloque segun el tipo de la unidad que se esta denunciando
+function configurarVinculo() {
+    const bloque = document.getElementById('bloque-vinculo');
+    if (!bloque) return;
+    const tipo = String(unidad.TIPO_UNIDAD || '').toUpperCase();
+    vinculoDatos = null;
+    statusVinculo('');
+
+    const inp = document.getElementById('vinculo_dominio');
+    if (inp) { inp.value = ''; inp.style.borderColor = '#ddd'; }
+
+    if (tipo === 'TRACTOR') {
+        bloque.classList.remove('hidden');
+        document.getElementById('vinculo-titulo').innerText = 'Semirremolque';
+        document.getElementById('vinculo-label').innerText = '¿Llevaba semirremolque?*';
+        document.getElementById('vinculo-pregunta').classList.remove('hidden');
+        document.getElementById('vinculo_lleva').value = 'SI';
+        if (inp) inp.placeholder = 'Dominio del semirremolque*';
+    } else if (tipo === 'SEMI') {
+        bloque.classList.remove('hidden');
+        document.getElementById('vinculo-titulo').innerText = 'Tractor';
+        // Un semi no circula solo: no se pregunta, se pide directo
+        document.getElementById('vinculo-pregunta').classList.add('hidden');
+        document.getElementById('vinculo_lleva').value = 'SI';
+        if (inp) inp.placeholder = 'Dominio del tractor que lo traccionaba*';
+    } else {
+        bloque.classList.add('hidden');
+        return;
+    }
+    actualizarVinculo();
+}
+
+function actualizarVinculo() {
+    const lleva = (document.getElementById('vinculo_lleva') || {}).value || 'SI';
+    const box = document.getElementById('vinculo-dominio-box');
+    const inp = document.getElementById('vinculo_dominio');
+    if (!box || !inp) return;
+    const pide = lleva === 'SI';
+    box.classList.toggle('hidden', !pide);
+    inp.required = pide;
+    if (!pide) { inp.value = ''; vinculoDatos = null; statusVinculo(''); }
+}
+
+async function buscarVinculo() {
+    const inp = document.getElementById('vinculo_dominio');
+    if (!inp) return;
+    const dom = inp.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (dom.length < 6) { statusVinculo(''); vinculoDatos = null; return; }
+
+    statusVinculo('Buscando unidad...', 'buscando');
+    try {
+        const d = await rpc('traer_datos_dominio', { p_dominio: dom });
+        if (inp.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') !== dom) return;
+
+        const esperado = String(unidad.TIPO_UNIDAD || '').toUpperCase() === 'TRACTOR' ? 'SEMI' : 'TRACTOR';
+
+        if (!d || !d.encontrado) {
+            vinculoDatos = { dominio: dom, poliza: '', tipo: esperado };
+            statusVinculo('Ese dominio no figura en la base. Se va a registrar igual, pero sin número de póliza.', 'aviso');
+            return;
+        }
+        const tipoReal = String(d.tipo_unidad || '').toUpperCase();
+        vinculoDatos = { dominio: d.dominio, poliza: d.poliza || '', tipo: tipoReal || esperado };
+
+        // Aviso si el dominio cargado no es del tipo que corresponde
+        // (por ejemplo, un tractor donde se esperaba un semi). No bloquea:
+        // puede haber unidades sin clasificar.
+        if (tipoReal && tipoReal !== esperado) {
+            statusVinculo(`${d.dominio} figura como ${tipoReal}, no como ${esperado}. Verificá el dominio. Póliza ${d.poliza || 'no registrada'}`, 'aviso');
+        } else {
+            statusVinculo(`${d.dominio} — Póliza ${d.poliza || 'no registrada'}`, 'ok');
+        }
+    } catch (err) {
+        vinculoDatos = null;
+        statusVinculo('No se pudo consultar. Revisá el dominio.', 'aviso');
+        console.warn('traer_datos_dominio fallo:', err.message);
+    }
+}
+
+function initVinculo() {
+    const inp = document.getElementById('vinculo_dominio');
+    if (!inp) return;
+    inp.addEventListener('input', () => {
+        inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        clearTimeout(timerVinculo);
+        timerVinculo = setTimeout(buscarVinculo, 450);
+    });
+    inp.addEventListener('blur', () => { clearTimeout(timerVinculo); buscarVinculo(); });
+}
+
+// Linea que se agrega ARRIBA del relato, solo en el PDF. El relato que escribio
+// el chofer no se toca.
+function lineaVinculoPDF() {
+    const tipoUnidad = String(unidad.TIPO_UNIDAD || '').toUpperCase();
+    if (!vinculoDatos || !vinculoDatos.dominio) return '';
+    const pol = vinculoDatos.poliza ? `, Póliza ${vinculoDatos.poliza}` : ', póliza no registrada';
+    if (tipoUnidad === 'TRACTOR') {
+        return `Llevaba al SEMIRREMOLQUE ${vinculoDatos.dominio}${pol}.`;
+    }
+    if (tipoUnidad === 'SEMI') {
+        return `Traccionado por el TRACTOR ${vinculoDatos.dominio}${pol}.`;
+    }
+    return '';
 }
 
 // ============================================================================
@@ -724,6 +852,9 @@ window.onload = function() {
     ['dni_chofer', 'tel_chofer', 'prop_dni', 'prop_tel', 'cp', 'cp_chofer'].forEach(aplicarValidacionEstricta);
     initAutocompletadoChofer();
     initAutocompletadoChoferInterno();
+    initAutocompletadoRC();
+    initVinculo();
+    ['rc_dni_chofer', 'rc_tel_contacto'].forEach(aplicarValidacionEstricta);
     document.getElementById('es_propietario').addEventListener('change', function() {
         document.getElementById('datos_propietario').classList.toggle('hidden', this.value === 'SI');
     });
@@ -926,6 +1057,7 @@ function iniciarFlujoExterno() {
     actualizarBannerAmpliacion();
     resetearCroquis();
     resetearPaso2();
+    configurarVinculo();
     // Reset de lesionados por si quedo algo de una carga anterior
     const selLes = document.getElementById('hubo_lesionados');
     if (selLes) selLes.value = 'NO';
@@ -1268,6 +1400,23 @@ function precargarFormulario(s) {
     setearProvinciaLocalidad(s.provincia, s.localidad);
     setVal2('cp', s.cp);
 
+    // Unidad vinculada (semi o tractor) de la carga original
+    configurarVinculo();
+    if (s.semi_dominio) {
+        vinculoDatos = {
+            dominio: s.semi_dominio,
+            poliza:  s.semi_poliza || '',
+            tipo:    s.vinculo_tipo || ''
+        };
+        setVal2('vinculo_dominio', s.semi_dominio);
+        const selLleva = document.getElementById('vinculo_lleva');
+        if (selLleva) { selLleva.value = 'SI'; actualizarVinculo(); }
+        statusVinculo(`${s.semi_dominio} — Póliza ${s.semi_poliza || 'no registrada'}`, 'ok');
+    } else if (String(unidad.TIPO_UNIDAD || '').toUpperCase() === 'TRACTOR') {
+        const selLleva = document.getElementById('vinculo_lleva');
+        if (selLleva) { selLleva.value = 'NO'; actualizarVinculo(); }
+    }
+
     // calle_interseccion viene como "CALLE e INTERSECCION". Splitear el primer " e "
     if (s.calle_interseccion) {
         const partes = s.calle_interseccion.split(/\s+e\s+/i);
@@ -1416,7 +1565,11 @@ async function enviarSiniestro() {
             localidad: localidadFinal,
             cp: val('cp'),
             calle_interseccion: `${val('calle')} e ${val('interseccion')}`,
-            dominio_asegurado: unidad.DOMINIO
+            dominio_asegurado: unidad.DOMINIO,
+            // Unidad vinculada: el semi si esto es un tractor, o al reves
+            semi_dominio: (vinculoDatos && vinculoDatos.dominio) || '',
+            semi_poliza:  (vinculoDatos && vinculoDatos.poliza)  || '',
+            vinculo_tipo: (vinculoDatos && vinculoDatos.tipo)    || ''
         };
 
         let resultado;
@@ -1532,7 +1685,13 @@ async function enviarSiniestro() {
         setVal('p-v-ma', marcaFinal); setVal('p-v-mo', m);
         setVal('p-v-do', unidad.DOMINIO); setVal('p-v-anio', unidad.ANIO);
         setVal('p-v-mot', unidad.MOTOR); setVal('p-v-cha', unidad.CHASIS);
-        setVal('p-v-dan', val('danos_propios')); setVal('p-relato', val('descripcion'));
+        setVal('p-v-dan', val('danos_propios'));
+        // El relato del PDF lleva arriba la linea de la unidad vinculada
+        // (semi o tractor). Lo que escribio el chofer queda intacto abajo.
+        const lineaVin = lineaVinculoPDF();
+        setVal('p-relato', lineaVin
+            ? lineaVin + '\n\n' + val('descripcion')
+            : val('descripcion'));
 
         setVal('p-c-nom', val('nombre_chofer')); setVal('p-c-dni', val('dni_chofer'));
         setVal('p-c-tel', val('tel_chofer'));
@@ -1786,6 +1945,326 @@ function abrirModalInterno() {
     titulo.innerText = "¿Generar constancia interna?";
     detalle.innerText = "Se guardará el registro en la base, se generará el PDF y se enviará por mail. No inicia trámite con aseguradora.";
     document.getElementById('modal-confirmacion').classList.remove('hidden');
+}
+
+// ============================================================================
+// FLUJO RC — RESPONSABILIDAD CIVIL
+// Un empleado dana un bien de un tercero sin que intervenga un camion.
+// No hay patente que validar, asi que arranca directo desde la pantalla
+// inicial. Comparte la numeracion SN con el resto de las denuncias.
+// ============================================================================
+let ultimoDniRC = '';
+let timerDniRC = null;
+let choferRC = null;
+
+function statusDniRC(msg, tipo) {
+    const el = document.getElementById('rc-dni-status');
+    if (!el) return;
+    el.innerText = msg || '';
+    el.className = 'dni-status' + (tipo ? ' ' + tipo : '');
+}
+
+async function buscarChoferRC() {
+    const input = document.getElementById('rc_dni_chofer');
+    if (!input) return;
+    const dni = input.value.replace(/\D/g, '');
+    if (dni === ultimoDniRC) return;
+    ultimoDniRC = dni;
+
+    const limpiar = () => {
+        choferRC = null;
+        ['rc_nombre_chofer', 'rc_tel_contacto'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && el.classList.contains('autocompletado')) {
+                el.value = '';
+                el.classList.remove('autocompletado');
+            }
+        });
+    };
+
+    if (dni.length < 7) { statusDniRC(''); limpiar(); return; }
+
+    statusDniRC('Buscando empleado...', 'buscando');
+    try {
+        const data = await rpc('buscar_chofer', { p_dni: dni });
+        if (document.getElementById('rc_dni_chofer').value.replace(/\D/g, '') !== dni) return;
+        limpiar();
+        if (!data || !data.encontrado) {
+            statusDniRC('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
+            return;
+        }
+        const c = data.chofer || {};
+        choferRC = c;
+        rellenarCampoChofer('rc_nombre_chofer', c.nombre_completo);
+        rellenarCampoChofer('rc_tel_contacto', c.telefono);
+        let msg = c.nombre_completo || 'Empleado encontrado';
+        if (c.op) msg += ' — ' + c.op + (c.legajo ? ' (leg. ' + c.legajo + ')' : '');
+        statusDniRC(msg, 'ok');
+    } catch (err) {
+        limpiar();
+        statusDniRC('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
+        console.warn('buscar_chofer (RC) fallo:', err.message);
+    }
+}
+
+function initAutocompletadoRC() {
+    const input = document.getElementById('rc_dni_chofer');
+    if (!input) return;
+    input.addEventListener('input', () => {
+        clearTimeout(timerDniRC);
+        timerDniRC = setTimeout(buscarChoferRC, 450);
+    });
+    input.addEventListener('blur', () => {
+        clearTimeout(timerDniRC);
+        buscarChoferRC();
+    });
+    ['rc_nombre_chofer', 'rc_tel_contacto'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', () => el.classList.remove('autocompletado'));
+    });
+}
+
+function iniciarFlujoRC() {
+    modoAmpliacion = null;
+    limpiarStatus();
+    unidad = {};
+    datosEmpresa = {};
+    choferRC = null;
+    ultimoDniRC = '';
+    statusDniRC('');
+
+    ['rc_dni_chofer','rc_nombre_chofer','rc_calle','rc_localidad','rc_provincia',
+     'rc_tel_contacto','rc_mail_contacto','rc_danos','rc_relato',
+     'rc_terc_nombre','rc_terc_doc','rc_terc_tel','rc_terc_bien'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.value = ''; el.style.borderColor = '#ddd'; el.classList.remove('autocompletado'); }
+    });
+    const selA = document.getElementById('rc_autoridad');
+    if (selA) selA.value = 'NO';
+    const f = document.getElementById('rc_fotos');
+    if (f) f.value = '';
+
+    const hoy = new Date().toISOString().split('T')[0];
+    const fech = document.getElementById('rc_fecha');
+    if (fech) fech.setAttribute('max', hoy);
+
+    document.getElementById('pantalla-validacion').classList.add('hidden');
+    document.getElementById('pantalla-seleccion').classList.add('hidden');
+    document.getElementById('pantalla-tipo-siniestro').classList.add('hidden');
+    document.getElementById('pantalla-formulario').classList.add('hidden');
+    document.getElementById('pantalla-formulario-interno').classList.add('hidden');
+    document.getElementById('pantalla-formulario-rc').classList.remove('hidden');
+    cambiarPasoRC(1);
+}
+
+function volverAInicioRC() {
+    limpiarStatus();
+    document.getElementById('pantalla-formulario-rc').classList.add('hidden');
+    document.getElementById('pantalla-validacion').classList.remove('hidden');
+}
+
+function cambiarPasoRC(paso) {
+    ['step-rc-1', 'step-rc-2'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+    const actual = document.getElementById(`step-rc-${paso}`);
+    if (actual) actual.classList.remove('hidden');
+    const prog = document.getElementById('progress-rc');
+    if (prog) prog.style.width = (paso * 50) + '%';
+    const tit = document.getElementById('titulo-paso-rc');
+    if (tit) tit.innerText = paso === 1 ? 'Paso 1: El hecho' : 'Paso 2: Daños y damnificado';
+    const ind = document.getElementById('indicador-paso-rc');
+    if (ind) ind.innerText = `Paso ${paso} de 2`;
+    window.scrollTo(0, 0);
+}
+
+function validarYPasarRC(proximoPaso) {
+    const inputs = document.getElementById(`step-rc-${proximoPaso - 1}`).querySelectorAll('[required]');
+    let valido = true;
+    inputs.forEach(i => {
+        if (!i.checkValidity()) { i.style.borderColor = 'red'; valido = false; }
+        else { i.style.borderColor = '#ddd'; }
+    });
+    if (valido) cambiarPasoRC(proximoPaso);
+}
+
+function abrirModalRC() {
+    modoRC = true;
+    modoInterno = false;
+    document.getElementById('modal-titulo').innerText = "¿Generar la denuncia?";
+    document.getElementById('modal-detalle').innerText =
+        "Se guardará el registro, se generará el PDF y se enviará por mail.";
+    document.getElementById('modal-confirmacion').classList.remove('hidden');
+}
+
+async function enviarSiniestroRC() {
+    const btn = document.getElementById('btn-finalizar-rc');
+    btn.innerText = "Enviando..."; btn.disabled = true;
+    const val    = (id) => { const e = document.getElementById(id); return e ? e.value.trim().toUpperCase() : ""; };
+    const valRaw = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : ""; };
+
+    try {
+        // 1. Crear la denuncia primero, para tener el numero
+        const payload = {
+            tipo_siniestro: 'RC',
+            fecha_hecho: valRaw('rc_fecha'),
+            hora_hecho: valRaw('rc_hora'),
+            nombre_chofer: val('rc_nombre_chofer'),
+            dni_chofer: val('rc_dni_chofer'),
+            tel_chofer: val('rc_tel_contacto'),
+            legajo_chofer: (choferRC && choferRC.legajo) || '',
+            op_chofer: (choferRC && choferRC.op) || '',
+            calle_interseccion: val('rc_calle'),
+            localidad: val('rc_localidad'),
+            provincia: val('rc_provincia'),
+            danos_tercero: val('rc_danos'),
+            relato: valRaw('rc_relato'),
+            intervino_autoridad: val('rc_autoridad'),
+            mail_contacto: valRaw('rc_mail_contacto'),
+            // Damnificado (opcional)
+            nombre_cond_tercero: val('rc_terc_nombre'),
+            dni_cond_tercero: val('rc_terc_doc'),
+            tel_cond_tercero: val('rc_terc_tel'),
+            patente_tercero: val('rc_terc_bien')
+        };
+
+        const resultado = await rpc('crear_denuncia', { p_payload: payload });
+        if (!resultado || !resultado.success) throw new Error("Fallo al crear la denuncia en la base.");
+        nroSiniestroFinal = resultado.nro_siniestro;
+        const idDenuncia = resultado.id;
+
+        // 2. Carpeta con el numero de siniestro
+        const folder = `RC_${nroSiniestroFinal}`;
+        const pdfPath = `${folder}/Denuncia_RC_${tokenArchivo()}.pdf`;
+        const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
+
+        // 3. Fotos
+        const links = [];
+        const files = document.getElementById('rc_fotos').files;
+        for (let i = 0; i < files.length; i++) {
+            const blob = await comprimirImagen(files[i]);
+            const path = `${folder}/rc_${i}_${tokenArchivo()}.jpg`;
+            btn.innerText = "Subiendo fotos...";
+            const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
+                method: 'POST',
+                headers: sbHeaders({ 'Content-Type': blob.type || 'image/jpeg' }),
+                body: blob
+            });
+            if (!resUp.ok) throw new Error("Error al subir foto " + (i + 1));
+            links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, label: `foto_${i + 1}` });
+        }
+        btn.innerText = "Enviando...";
+
+        // 4. Llenar el template.
+        // Es una constancia interna: no lleva datos de poliza ni de aseguradora.
+        // Puede que ni siquiera termine siendo un siniestro; el objetivo es que
+        // quede el registro de lo que paso.
+        setVal('prc-sini-id', nroSiniestroFinal);
+        setVal('prc-fecha-den', hoyAR());
+        setVal('prc-fecha', fechaAR(valRaw('rc_fecha')));
+        setVal('prc-hora', valRaw('rc_hora'));
+        setVal('prc-calle', val('rc_calle'));
+        setVal('prc-localidad', val('rc_localidad'));
+        setVal('prc-provincia', val('rc_provincia'));
+        setVal('prc-emp-nom', val('rc_nombre_chofer'));
+        setVal('prc-emp-dni', val('rc_dni_chofer'));
+        setVal('prc-emp-op', choferRC
+            ? `${choferRC.op || ''}${choferRC.legajo ? ' / ' + choferRC.legajo : ''}` : '');
+        setVal('prc-tel', val('rc_tel_contacto'));
+        setVal('prc-mail', valRaw('rc_mail_contacto'));
+        setVal('prc-danos', val('rc_danos'));
+        setVal('prc-relato', valRaw('rc_relato'));
+        const etiquetasAut = { NO: 'No intervino', POLICIA: 'Policía',
+                               BOMBEROS: 'Bomberos', AMBOS: 'Policía y bomberos' };
+        setVal('prc-autoridad', etiquetasAut[val('rc_autoridad')] || val('rc_autoridad'));
+
+        const dam = document.getElementById('prc-damnificado');
+        if (dam) {
+            const n = val('rc_terc_nombre'), d = val('rc_terc_doc');
+            const t = val('rc_terc_tel'),    b = val('rc_terc_bien');
+            dam.innerHTML = (n || d || t || b)
+                ? `<div><b>Nombre / Razón social:</b> ${n || '—'}</div>
+                   <div style="display:grid; grid-template-columns:1fr 1fr;">
+                     <div><b>DNI / CUIT:</b> ${d || '—'}</div>
+                     <div><b>Teléfono:</b> ${t || '—'}</div>
+                   </div>
+                   <div><b>Bien dañado:</b> ${b || '—'}</div>`
+                : '<span style="color:#666;">No se registraron datos del damnificado al momento de la denuncia.</span>';
+        }
+
+        const contF = document.getElementById('prc-lista-fotos');
+        if (contF) {
+            contF.innerHTML = links.length
+                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:15px;">• ${l.label}</a>`).join(' ')
+                : '<span style="color:#888;">Sin fotos adjuntas.</span>';
+        }
+
+        // 5. Generar y subir el PDF
+        await new Promise(r => setTimeout(r, 1000));
+        const opt = {
+            margin: 0,
+            filename: `Denuncia_RC_${nroSiniestroFinal}.pdf`,
+            html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        const pdfBlob = await html2pdf().set(opt)
+            .from(document.getElementById('pdf-template-rc')).output('blob');
+        if (!pdfBlob || pdfBlob.size === 0) throw new Error("El PDF salió vacío. Contactar administración.");
+
+        let pdfOk = false, ultimoError = '', linkPdfFinalReal = linkFinal;
+        for (let intento = 0; intento < 3 && !pdfOk; intento++) {
+            const pathIntento = (intento === 0)
+                ? pdfPath : `${folder}/Denuncia_RC_r${intento}_${tokenArchivo()}.pdf`;
+            try {
+                const resPdfUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${pathIntento}`, {
+                    method: 'POST',
+                    headers: sbHeaders({ 'Content-Type': 'application/pdf' }),
+                    body: pdfBlob
+                });
+                if (resPdfUp.ok) {
+                    pdfOk = true;
+                    linkPdfFinalReal = `${URL_API}/storage/v1/object/public/denuncias/${pathIntento}`;
+                    break;
+                }
+                let detalle = '';
+                try { detalle = await resPdfUp.text(); } catch {}
+                ultimoError = `HTTP ${resPdfUp.status}` + (detalle ? ` — ${detalle.slice(0,180)}` : '');
+            } catch (errUp) {
+                ultimoError = errUp && errUp.message ? errUp.message : 'fallo de red';
+            }
+            if (intento < 2) await new Promise(r => setTimeout(r, 1000));
+        }
+        if (!pdfOk) throw new Error("Se cargó la denuncia pero falló al subir el PDF (" + ultimoError + ").");
+
+        // 6. Guardar el link
+        try {
+            await rpc('finalizar_denuncia', {
+                p_id: idDenuncia, p_patente: '',
+                p_link_pdf: linkPdfFinalReal, p_croquis_url: ''
+            });
+        } catch (e) { console.warn('No se pudo guardar el link del PDF:', e.message); }
+
+        // 7. Mail
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+            // OJO: no decir "daño a terceros" a secas, que es como se llama la
+            // denuncia normal de camion. Esto es la de Responsabilidad Civil.
+            asunto: "Posible siniestro de Responsabilidad Civil - " + nroSiniestroFinal
+                    + " - " + val('rc_nombre_chofer'),
+            link_pdf: linkPdfFinalReal,
+            link: linkPdfFinalReal,
+            dominio: 'SIN VEHICULO',
+            nro_siniestro: nroSiniestroFinal,
+            tipo_envio: 'RC'
+        });
+
+        showStatus(`¡ÉXITO! Registro ${nroSiniestroFinal} generado.`, "success");
+        setTimeout(() => location.reload(), 4000);
+
+    } catch (e) {
+        showStatus("ERROR: " + e.message, "error");
+        btn.innerText = "Finalizar Denuncia"; btn.disabled = false;
+    }
 }
 
 // Volver desde un flujo (externo/interno) al selector inicial sin recargar la pagina.

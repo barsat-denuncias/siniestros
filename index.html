@@ -6,7 +6,7 @@
     <title>App Siniestros</title>
     <!-- El ?v= evita que el navegador sirva una version cacheada.
          Al cambiar app.js o style.css, subir el numero. -->
-    <link rel="stylesheet" href="style.css?v=9">
+    <link rel="stylesheet" href="style.css?v=15">
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -21,6 +21,73 @@
                 <button type="submit">Validar Unidad</button>
             </form>
             <p id="mensaje-error" class="error"></p>
+
+            <p style="font-size:12px; color:#888; margin:22px 0 8px;">¿El daño no involucró ningún vehículo?</p>
+            <button type="button" class="btn-secundario" onclick="iniciarFlujoRC()">Daño a un tercero sin vehículo involucrado</button>
+            <p style="font-size:11px; color:#999; margin-top:6px;">Por ejemplo: manipulando mercadería se dañó algo de un tercero. Contá lo que pasó y nosotros vemos por dónde corresponde tramitarlo.</p>
+        </div>
+
+        <div id="pantalla-formulario-rc" class="hidden">
+            <h2 id="titulo-paso-rc">Paso 1: El hecho</h2>
+            <p id="indicador-paso-rc" style="font-weight:bold; color:#8a4b00; margin-bottom:10px;">Paso 1 de 2</p>
+            <div class="progress-bar"><div id="progress-rc" style="width: 50%; background:#c17700;"></div></div>
+            <p style="font-size: 11px; color: #888; margin-bottom: 10px;">* Campos obligatorios. Si no tenés un dato obligatorio escribí NO INFORMA.</p>
+
+            <div class="step" id="step-rc-1">
+                <p class="subtitulo-bloque">Empleado que interviene</p>
+                <input type="text" id="rc_dni_chofer" placeholder="DNI del empleado*" required maxlength="10" inputmode="numeric" autocomplete="off">
+                <p id="rc-dni-status" class="dni-status"></p>
+                <input type="text" id="rc_nombre_chofer" placeholder="Apellido y Nombre*" required maxlength="60">
+
+                <p class="subtitulo-bloque">Día, hora y lugar</p>
+                <div style="display: flex; gap: 10px;">
+                    <input type="date" id="rc_fecha" required>
+                    <input type="time" id="rc_hora" required>
+                </div>
+                <input type="text" id="rc_calle" placeholder="Calle y altura / entre calles*" required maxlength="80">
+                <input type="text" id="rc_localidad" placeholder="Localidad*" required maxlength="40">
+                <input type="text" id="rc_provincia" placeholder="Provincia*" required maxlength="40">
+
+                <p class="subtitulo-bloque">Contacto</p>
+                <input type="text" id="rc_tel_contacto" placeholder="Teléfono de contacto*" required maxlength="15">
+                <input type="email" id="rc_mail_contacto" placeholder="Mail de contacto*" required maxlength="60">
+
+                <button onclick="validarYPasarRC(2)">Siguiente</button>
+                <button class="btn-secundario" onclick="volverAInicioRC()">Volver</button>
+            </div>
+
+            <div class="step hidden" id="step-rc-2">
+                <p class="subtitulo-bloque">Qué pasó</p>
+                <textarea id="rc_danos" class="txt-chico" placeholder="Daños ocasionados*" required maxlength="500"></textarea>
+                <textarea id="rc_relato" placeholder="Cómo ocurrió, con tus palabras*" required maxlength="1000"></textarea>
+
+                <label>¿Intervino policía o bomberos?*</label>
+                <select id="rc_autoridad">
+                    <option value="NO">No intervino nadie</option>
+                    <option value="POLICIA">Policía</option>
+                    <option value="BOMBEROS">Bomberos</option>
+                    <option value="AMBOS">Policía y bomberos</option>
+                </select>
+
+                <p class="subtitulo-bloque">Damnificado (opcional)</p>
+                <p style="font-size:11px; color:#888; margin:-4px 0 8px;">Si tenés los datos de la persona afectada, cargalos. Si no, dejalo vacío.</p>
+                <input type="text" id="rc_terc_nombre" placeholder="Nombre o razón social del damnificado" maxlength="60">
+                <input type="text" id="rc_terc_doc" placeholder="DNI o CUIT" maxlength="13">
+                <input type="text" id="rc_terc_tel" placeholder="Teléfono" maxlength="15">
+                <input type="text" id="rc_terc_bien" placeholder="Qué se dañó (y dominio si es un vehículo)" maxlength="80">
+
+                <p style="font-size: 13px; margin: 15px 0 10px; color: #333;">Adjuntá fotos del daño.</p>
+                <div class="upload-group">
+                    <label>Fotos</label>
+                    <div style="display:flex; gap:5px;">
+                        <input type="file" id="rc_fotos" accept="image/*" multiple>
+                        <button type="button" onclick="limpiarAdjunto('rc_fotos')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button>
+                    </div>
+                </div>
+
+                <button id="btn-finalizar-rc" onclick="abrirModalRC()" style="background:#c17700;">Finalizar Denuncia</button>
+                <button class="btn-secundario" onclick="cambiarPasoRC(1)">Volver</button>
+            </div>
         </div>
 
         <div id="pantalla-seleccion" class="hidden">
@@ -71,6 +138,23 @@
                 <input type="text" id="cp" placeholder="Código Postal*" required maxlength="10">
                 <input type="text" id="calle" placeholder="Calle / Ruta / Km*" required maxlength="60">
                 <input type="text" id="interseccion" placeholder="Intersección / Entre calles*" required maxlength="60">
+
+                <!-- Solo aparece si la unidad es TRACTOR o SEMI. En chasis queda oculto. -->
+                <div id="bloque-vinculo" class="hidden">
+                    <p class="subtitulo-bloque" id="vinculo-titulo">Semirremolque</p>
+                    <div id="vinculo-pregunta">
+                        <label id="vinculo-label">¿Llevaba semirremolque?*</label>
+                        <select id="vinculo_lleva" onchange="actualizarVinculo()">
+                            <option value="SI">SÍ</option>
+                            <option value="NO">NO</option>
+                        </select>
+                    </div>
+                    <div id="vinculo-dominio-box">
+                        <input type="text" id="vinculo_dominio" placeholder="Dominio" maxlength="10" autocomplete="off">
+                        <p id="vinculo-status" class="dni-status"></p>
+                    </div>
+                </div>
+
                 <button onclick="validarYPasar(2)">Siguiente</button>
                 <button class="btn-secundario" onclick="volverASelector()">Volver</button>
             </div>
@@ -401,7 +485,57 @@
                 </div>
             </div>
         </div>
+
+        <div id="pdf-template-rc" style="width: 210mm; background: white; color: black; font-family: Arial, sans-serif; font-size: 10pt; margin: 0; padding: 0; line-height: 1.5;">
+            <div style="height: 296mm; padding: 15mm 25mm; box-sizing: border-box; display: flex; flex-direction: column;">
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <h1 style="margin: 0; font-size: 15pt; font-weight: bold; letter-spacing: 1px;">REGISTRO DE DAÑO A TERCEROS — RESPONSABILIDAD CIVIL</h1>
+                    <p style="margin: 4px 0 0; font-size: 10pt;">Sin intervención de vehículo</p>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 18px; font-size: 10pt; border: 1px solid #000; padding: 6px 10px;">
+                    <div><b>Siniestro Nº:</b> <span id="prc-sini-id"></span></div>
+                    <div style="text-align:right;"><b>Fecha de denuncia:</b> <span id="prc-fecha-den"></span></div>
+                </div>
+
+                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">1 &nbsp; FECHA Y LUGAR DEL HECHO</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 8px;">
+                    <div><b>Fecha:</b> <span id="prc-fecha"></span></div>
+                    <div><b>Hora:</b> <span id="prc-hora"></span></div>
+                </div>
+                <div style="margin-bottom: 8px;"><b>Lugar:</b> <span id="prc-calle"></span></div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 20px;">
+                    <div><b>Localidad:</b> <span id="prc-localidad"></span></div>
+                    <div><b>Provincia:</b> <span id="prc-provincia"></span></div>
+                </div>
+
+                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">2 &nbsp; EMPLEADO QUE INTERVINO</div>
+                <div style="margin-bottom: 6px;"><b>Apellido y Nombre:</b> <span id="prc-emp-nom"></span></div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 8px;">
+                    <div><b>DNI:</b> <span id="prc-emp-dni"></span></div>
+                    <div><b>Operación / Legajo:</b> <span id="prc-emp-op"></span></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1.2fr; margin-bottom: 20px;">
+                    <div><b>Teléfono de contacto:</b> <span id="prc-tel"></span></div>
+                    <div><b>Mail de contacto:</b> <span id="prc-mail"></span></div>
+                </div>
+
+                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">3 &nbsp; DAÑOS Y RELATO</div>
+                <div style="margin-bottom: 8px;"><b>Daños ocasionados:</b> <span id="prc-danos"></span></div>
+                <div id="prc-relato" style="font-size: 9.5pt; white-space: pre-wrap; min-height: 70px; line-height: 1.4; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"></div>
+                <div style="margin-bottom: 20px;"><b>¿Intervino policía o bomberos?:</b> <span id="prc-autoridad"></span></div>
+
+                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">4 &nbsp; DAMNIFICADO</div>
+                <div id="prc-damnificado" style="margin-bottom: 20px;"></div>
+
+                <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 8px; font-size: 11pt;">5 &nbsp; REGISTRO FOTOGRÁFICO</div>
+                <div id="prc-lista-fotos" style="font-size: 8.5pt; color: #444; border-top: 1px solid #ccc; padding-top: 6px; line-height: 1.3;"></div>
+
+                <div style="margin-top: auto; border-top: 1px solid #000; padding-top: 8px; font-size: 8pt; color: #555;">
+                    Documento generado automáticamente por el sistema interno de siniestros.
+                </div>
+            </div>
+        </div>
     </div>
-    <script src="app.js?v=9"></script>
+    <script src="app.js?v=15"></script>
 </body>
 </html>
