@@ -1665,6 +1665,9 @@ async function enviarSiniestro() {
 
         // ---- 4. Llenar template con el SN ya asignado ----
         setVal('p-sini-id', nroSiniestroFinal);
+        // Pie de la hoja 2, donde antes estaba el bloque de firma
+        setVal('p-pie-sn', nroSiniestroFinal);
+        setVal('p-pie-fecha', hoyAR());
         setVal('p-v-aseg', unidad.ASEGURADORA_LEGAL || unidad.ASEGURADORA);
         setVal('p-v-pol', unidad.POLIZA);
         setVal('p-fecha', fechaAR(val('fecha_hecho'))); setVal('p-hora', val('hora_hecho'));
