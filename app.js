@@ -19,8 +19,12 @@ let modoAmpliacion = null;
 // nuevo. Las fotos NUEVAS que sube van por separado por los <input type=file>.
 let fotosViejasMantenidas = [];
 
+// Promesa de la carga de fotos de la denuncia original (ampliaciones).
+// El envio la espera antes de armar el listado del PDF.
+let cargaFotosViejas = null;
+
 // Categorias conocidas (deben coincidir con los IDs f_<cat> del step 5)
-const CATEGORIAS_FOTO = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
+const CATEGORIAS_FOTO = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros', 'policial'];
 
 // === Estado del croquis (Paso 3) ===
 let croquisCanvas = null;
@@ -32,6 +36,10 @@ let croquisInicializado = false;
 // URL del croquis previo cuando ampliamos. Se setea en iniciarAmpliacion y se
 // pinta sobre el canvas en iniciarCroquis para no perder el dibujo original.
 let croquisUrlPrevio = null;
+// true mientras se esta bajando el croquis de la denuncia original. No se deja
+// avanzar de paso hasta que termine: si no, se puede enviar una ampliacion con
+// el croquis vacio sin darse cuenta.
+let croquisPrevioPendiente = false;
 const CROQUIS_SIZE = 500;
 
 const localidadesData = {
@@ -107,11 +115,25 @@ function fechaAR(valor) {
 // ============================================================================
 const FOTO_LADO_MAX = 1600;
 const FOTO_CALIDAD  = 0.72;
+// Debajo de este tamaño ya no vale la pena procesar. Estaba en 600 KB y era
+// demasiado alto: dejaba pasar sin tocar capturas de pantalla PNG de 400-500 KB
+// que convertidas a JPEG quedan en 50. Ademas se subian con extension .jpg
+// pero contenido PNG, porque se reusaba el tipo del archivo original.
+const FOTO_UMBRAL = 120 * 1024;
 
+// Devuelve SIEMPRE un JPEG, salvo que el navegador no pueda leer la imagen.
+// Que el resultado sea siempre del mismo tipo es lo que evita el desfasaje
+// entre la extension del archivo y su contenido real.
 function comprimirImagen(file) {
     return new Promise((resolve) => {
-        // Si ya es chica, no vale la pena procesarla
-        if (file.size <= 600 * 1024) { resolve(file); return; }
+        // Los PDF (denuncia policial) y cualquier cosa que no sea imagen se
+        // suben tal cual: no hay nada que redimensionar.
+        if (!/^image\//i.test(file.type || '')) { resolve(file); return; }
+
+        const yaEsJpegChico =
+            file.size <= FOTO_UMBRAL &&
+            /^image\/jpe?g$/i.test(file.type || '');
+        if (yaEsJpegChico) { resolve(file); return; }
 
         const url = URL.createObjectURL(file);
         const img = new Image();
@@ -126,13 +148,18 @@ function comprimirImagen(file) {
                 const cv = document.createElement('canvas');
                 cv.width = w; cv.height = h;
                 const cx = cv.getContext('2d');
-                cx.fillStyle = '#fff';       // por si la imagen tiene transparencia
+                cx.fillStyle = '#fff';       // los PNG con transparencia irian en negro
                 cx.fillRect(0, 0, w, h);
                 cx.drawImage(img, 0, 0, w, h);
                 URL.revokeObjectURL(url);
 
                 cv.toBlob(
-                    (blob) => resolve(blob && blob.size ? blob : file),
+                    (blob) => {
+                        // Si el JPEG resultante pesa mas que el original (raro,
+                        // pasa con imagenes muy chicas o planas), se queda el original
+                        if (blob && blob.size && blob.size < file.size) resolve(blob);
+                        else resolve(file);
+                    },
                     'image/jpeg',
                     FOTO_CALIDAD
                 );
@@ -148,10 +175,66 @@ function comprimirImagen(file) {
     });
 }
 
+// Extension acorde al contenido real del blob que se va a subir.
+// Sin esto, un PNG que no se pudo convertir terminaba llamandose .jpg
+function extensionDe(blob) {
+    const t = (blob && blob.type ? blob.type : '').toLowerCase();
+    if (t === 'application/pdf') return 'pdf';
+    if (t === 'image/png')  return 'png';
+    if (t === 'image/webp') return 'webp';
+    if (t === 'image/heic' || t === 'image/heif') return 'heic';
+    return 'jpg';
+}
+
+// Muestra los datos de la dependencia solo si intervino la policia
+function actualizarPolicia() {
+    const sel = document.getElementById('intervino_policia');
+    const box = document.getElementById('bloque-policia');
+    if (!sel || !box) return;
+    const hay = sel.value === 'SI';
+    box.classList.toggle('hidden', !hay);
+    ['dependencia_nombre', 'dependencia_nro'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.required = hay;
+        if (!hay) { el.value = ''; el.style.borderColor = '#ddd'; }
+    });
+}
+
 function tokenArchivo() {
     const b = new Uint8Array(6);
     crypto.getRandomValues(b);
     return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+}
+
+// ============================================================================
+// MONTOS
+// Formato argentino: punto para miles, coma para decimales.
+// "1.234,56" -> 1234.56    "1234,5" -> 1234.5    "1234" -> 1234
+// Tambien tolera "1,234.56" (formato ingles) mirando cual separador va ultimo.
+// ============================================================================
+function parseMontoAR(txt) {
+    const s = String(txt == null ? '' : txt).trim().replace(/[^0-9.,]/g, '');
+    if (!s) return null;
+    const ultimaComa  = s.lastIndexOf(',');
+    const ultimoPunto = s.lastIndexOf('.');
+    let limpio;
+    if (ultimaComa === -1 && ultimoPunto === -1) {
+        limpio = s;
+    } else if (ultimaComa > ultimoPunto) {
+        // La coma es el decimal: se sacan los puntos de miles
+        limpio = s.replace(/\./g, '').replace(',', '.');
+    } else {
+        // El punto es el decimal: se sacan las comas de miles
+        limpio = s.replace(/,/g, '');
+    }
+    const n = parseFloat(limpio);
+    return isNaN(n) ? null : n;
+}
+
+function formatMontoAR(n) {
+    if (n === null || n === undefined || isNaN(n)) return '';
+    return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // Fecha de hoy en formato argentino, sin depender del locale del navegador.
@@ -225,13 +308,96 @@ function limpiarStatus() {
 // Flag global para que el modal sepa a que envio despachar (externo/ampliacion vs interno).
 // Antes reescribiamos el onclick del boton del modal, lo que rompia "ampliar" si el user
 // abria/cancelaba un modal interno antes. Ahora el boton llama siempre a un dispatcher.
-let modoInterno = false;
-let modoRC = false;
+// Un unico valor con el flujo activo: 'EXTERNO' | 'INTERNO' | 'RC'.
+// Antes eran dos booleanos sueltos (modoInterno / modoRC) y abrirModalInterno
+// no reseteaba modoRC. Si alguien entraba a RC, abria el modal, cancelaba,
+// volvia al inicio y cargaba un interno, el dispatcher veia modoRC todavia en
+// true y enviaba la constancia interna por el flujo de RC, con los datos del
+// formulario anterior. Con un solo valor eso no puede pasar.
+let flujoActivo = 'EXTERNO';
+
+// ============================================================================
+// ENVIO REANUDABLE
+// El envio tiene varias etapas: crear la denuncia, subir fotos, generar y subir
+// el PDF, guardar los links y mandar el mail. Si falla una etapa tardia (tipico:
+// el mail), el catch reactivaba el boton y al reintentar se volvia a llamar a
+// crear_denuncia, generando una SEGUNDA denuncia del mismo hecho con otro
+// numero. Esto guarda lo ya conseguido para retomar en vez de empezar de cero.
+// ============================================================================
+let envioEnCurso = null;   // { flujo, id, nro, folder, linkPdf, fotos }
+
+function reiniciarEnvio() { envioEnCurso = null; }
+
+// ============================================================================
+// DESCARGA DEL PDF AL TERMINAR
+// El PDF se genera en el celular antes de subirlo, asi que se puede ofrecer la
+// descarga en el acto. Sirve para imprimirlo y que el chofer lo firme, y de
+// paso deja de depender de que el link siga vivo.
+// El blob se guarda en memoria hasta que el usuario lo baja o recarga.
+// ============================================================================
+let pdfParaDescargar = null;
+
+function ofrecerDescargaPDF(blob, nombre) {
+    pdfParaDescargar = { blob, nombre };
+    const cont = document.getElementById('descarga-pdf');
+    if (!cont) return;
+    const btn = document.getElementById('btn-descargar-pdf');
+    if (btn) btn.innerText = `Descargar ${nombre}`;
+    cont.classList.remove('hidden');
+}
+
+// Al terminar no se recarga sola la pagina (se perderia el PDF descargable).
+// Se muestra un boton para volver al inicio cuando el chofer ya lo bajo.
+function mostrarVolverAlInicio() {
+    const cont = document.getElementById('descarga-pdf');
+    if (!cont || document.getElementById('btn-volver-inicio')) return;
+    const b = document.createElement('button');
+    b.id = 'btn-volver-inicio';
+    b.type = 'button';
+    b.className = 'btn-secundario';
+    b.innerText = 'Cargar otra denuncia';
+    b.onclick = () => location.reload();
+    cont.appendChild(b);
+}
+
+function descargarPDFGenerado() {
+    if (!pdfParaDescargar) return;
+    const url = URL.createObjectURL(pdfParaDescargar.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = pdfParaDescargar.nombre;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Se libera despues, para no cortar la descarga en curso
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// Bloquea todos los campos del formulario mientras se envia.
+// Antes solo se deshabilitaba el boton Finalizar: se podia volver de paso y
+// cambiar un dato mientras subian las fotos, con lo cual la base quedaba con
+// un valor y el PDF con otro.
+function congelarFormulario(pantallaId, congelar) {
+    const cont = document.getElementById(pantallaId);
+    if (!cont) return;
+    cont.querySelectorAll('input, textarea, select, button').forEach(el => {
+        if (el.id && el.id.startsWith('btn-descargar')) return;
+        el.disabled = !!congelar;
+    });
+    cont.style.opacity = congelar ? '0.6' : '';
+}
+
+// Devuelve el envio a medias si corresponde al mismo flujo, o null
+function envioReanudable(flujo) {
+    if (envioEnCurso && envioEnCurso.flujo === flujo && envioEnCurso.id) {
+        return envioEnCurso;
+    }
+    return null;
+}
 
 function abrirModal() {
     // Texto distinto si estamos ampliando vs denuncia nueva
-    modoInterno = false;
-    modoRC = false;
+    flujoActivo = 'EXTERNO';
     const titulo = document.getElementById('modal-titulo');
     const detalle = document.getElementById('modal-detalle');
     if (modoAmpliacion) {
@@ -245,12 +411,12 @@ function abrirModal() {
 }
 function cerrarModal() { document.getElementById('modal-confirmacion').classList.add('hidden'); }
 
-// Dispatcher unico que decide a que flujo despacha segun modoInterno.
+// Dispatcher unico que decide a que flujo despacha segun flujoActivo.
 function confirmarEnvioDispatcher() {
     cerrarModal();
-    if (modoRC) enviarSiniestroRC();
-    else if (modoInterno) enviarSiniestroInterno();
-    else enviarSiniestro();
+    if (flujoActivo === 'RC')           enviarSiniestroRC();
+    else if (flujoActivo === 'INTERNO') enviarSiniestroInterno();
+    else                                enviarSiniestro();
 }
 
 // Compat: mantengo las dos funciones por si quedan referencias viejas.
@@ -403,6 +569,11 @@ function lineaVinculoPDF() {
 let choferEncontrado = null;   // guardamos legajo/op para el payload
 let ultimoDniBuscado = '';
 let timerBusquedaDni = null;
+// Cada consulta lleva un numero. Cuando vuelve, si ya se disparo otra mas
+// nueva, la vieja se descarta. Sin esto, cambiar de DNI mientras hay una
+// consulta en vuelo podia dejar los datos del chofer anterior, o peor: el
+// catch de la consulta vieja borraba los datos de la nueva que si habia salido bien.
+let seqBusquedaDni = 0;
 
 const CAMPOS_AUTOCOMPLETABLES = [
     'nombre_chofer', 'tel_chofer', 'domicilio_chofer',
@@ -452,6 +623,13 @@ function limpiarCamposAutocompletados() {
 function mostrarDatosConductor(mostrar) {
     const box = document.getElementById('datos-conductor');
     if (box) box.classList.toggle('hidden', !mostrar);
+    // El boton Siguiente acompaña al bloque, pero vive afuera para que se pueda
+    // habilitar tambien en la carga manual sin DNI.
+    const btn = document.getElementById('btn-paso2-siguiente');
+    if (btn) btn.classList.toggle('hidden', !mostrar);
+    // El atajo de carga manual solo tiene sentido mientras esta oculto
+    const manual = document.getElementById('btn-cargar-manual');
+    if (manual) manual.classList.toggle('hidden', !!mostrar);
 }
 
 function resetearPaso2() {
@@ -484,23 +662,34 @@ async function buscarChoferPorDni() {
     if (dni === ultimoDniBuscado) return;
     ultimoDniBuscado = dni;
 
+    // "NO INFORMA" u otro texto sin digitos: no hay padron que consultar, pero
+    // la carga tiene que poder seguir a mano.
+    const textoLibre = /[A-Za-z]/.test(input.value) && dni.length === 0;
+    if (textoLibre) {
+        limpiarCamposAutocompletados();
+        statusDni('Sin DNI: completá los datos del conductor a mano.', 'aviso');
+        mostrarDatosConductor(true);
+        return;
+    }
+
     if (dni.length < 7) {
-        statusDni('');
+        statusDni(dni.length ? 'Seguí escribiendo el DNI…' : '');
         limpiarCamposAutocompletados();
         mostrarDatosConductor(false);
         return;
     }
 
+    // Los datos del DNI anterior se borran YA, no cuando vuelve la respuesta:
+    // mientras se consulta no tienen que quedar visibles datos de otra persona.
+    limpiarCamposAutocompletados();
     statusDni('Buscando conductor...', 'buscando');
+
+    const miTurno = ++seqBusquedaDni;
     try {
         const data = await rpc('buscar_chofer', { p_dni: dni });
 
-        // Si mientras tanto siguio tipeando, descartamos esta respuesta
-        const actual = document.getElementById('dni_chofer').value.replace(/\D/g, '');
-        if (actual !== dni) return;
-
-        // Antes de nada, borramos lo que habiamos puesto del DNI anterior.
-        limpiarCamposAutocompletados();
+        // Si mientras tanto se disparo otra consulta, esta llego tarde
+        if (miTurno !== seqBusquedaDni) return;
 
         if (!data || !data.encontrado) {
             statusDni('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
@@ -526,6 +715,9 @@ async function buscarChoferPorDni() {
         mostrarDatosConductor(true);
 
     } catch (err) {
+        // Un error de una consulta vieja NO puede borrar los datos que trajo
+        // una consulta posterior que si funciono.
+        if (miTurno !== seqBusquedaDni) return;
         limpiarCamposAutocompletados();
         statusDni('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
         mostrarDatosConductor(true);
@@ -559,6 +751,7 @@ function initAutocompletadoChofer() {
 // La constancia interna solo imprime nombre, DNI y telefono del conductor.
 let ultimoDniInterno = '';
 let timerDniInterno = null;
+let choferInterno = null;   // datos del padron para ESTE formulario, no el externo
 
 function statusDniInterno(msg, tipo) {
     const el = document.getElementById('i-dni-status');
@@ -577,6 +770,7 @@ async function buscarChoferInterno() {
 
     // Vacia lo que habiamos completado del DNI anterior
     const limpiarInternos = () => {
+        choferInterno = null;
         ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => {
             const el = document.getElementById(id);
             if (el && el.classList.contains('autocompletado')) {
@@ -600,6 +794,10 @@ async function buscarChoferInterno() {
             return;
         }
         const c = data.chofer || {};
+        // El interno tiene su PROPIA variable. Antes usaba choferEncontrado, que
+        // es la del externo: si venias de cargar un externo, la constancia se
+        // guardaba con el legajo y la operacion del OTRO chofer.
+        choferInterno = c;
         rellenarCampoChofer('i_nombre_chofer', c.nombre_completo);
         rellenarCampoChofer('i_tel_chofer',    c.telefono);
 
@@ -765,10 +963,19 @@ function iniciarCroquis() {
     croquisFueUsado = false;
 
     // Si estamos ampliando una denuncia con croquis previo, lo pintamos sobre la
-    // rosa de los vientos. Marcamos como usado para que la validacion pase aunque
-    // el usuario no agregue nada (la imagen vieja vale por si sola).
+    // rosa de los vientos.
+    // OJO: NO se marca como usado antes de que la imagen este efectivamente
+    // pintada. Antes se marcaba de entrada, asi que si la descarga fallaba el
+    // chofer podia avanzar con el fondo vacio y el croquis original se perdia
+    // sin que nadie se enterara.
     if (croquisUrlPrevio) {
-        croquisFueUsado = true;
+        croquisPrevioPendiente = true;
+        const msg = document.getElementById('croquis-error');
+        if (msg) {
+            msg.style.display = 'block';
+            msg.style.color = '#666';
+            msg.innerText = 'Recuperando el croquis de la denuncia original...';
+        }
         cargarCroquisPrevio(croquisUrlPrevio);
     }
 
@@ -814,6 +1021,7 @@ function resetearCroquis() {
     croquisFueUsado = false;
     croquisHistorial = [];
     croquisUrlPrevio = null;
+    croquisPrevioPendiente = false;
 }
 
 // Carga la imagen del croquis previo sobre el canvas actual. Hacemos fetch como
@@ -821,12 +1029,25 @@ function resetearCroquis() {
 // la imagen en el canvas (sino el canvas queda tainted y toBlob() falla).
 async function cargarCroquisPrevio(url) {
     if (!url || !croquisCtx) return;
+
+    const avisar = (texto, color) => {
+        const msg = document.getElementById('croquis-error');
+        if (!msg) return;
+        msg.style.display = texto ? 'block' : 'none';
+        msg.style.color = color || '#d9534f';
+        msg.innerText = texto || '';
+    };
+    const fallo = (detalle) => {
+        console.warn('Croquis previo:', detalle);
+        croquisPrevioPendiente = false;
+        croquisFueUsado = false;   // hay que volver a dibujarlo
+        avisar('No se pudo recuperar el croquis de la denuncia original. '
+             + 'Dibujalo de nuevo antes de continuar.');
+    };
+
     try {
         const res = await fetch(url);
-        if (!res.ok) {
-            console.warn('Croquis previo HTTP', res.status, url);
-            return;
-        }
+        if (!res.ok) { fallo('HTTP ' + res.status); return; }
         const blob = await res.blob();
         const objectUrl = URL.createObjectURL(blob);
         const img = new Image();
@@ -834,14 +1055,18 @@ async function cargarCroquisPrevio(url) {
             croquisCtx.drawImage(img, 0, 0, CROQUIS_SIZE, CROQUIS_SIZE);
             URL.revokeObjectURL(objectUrl);
             guardarEstadoCroquis();
+            // Recien ACA vale como croquis valido
+            croquisPrevioPendiente = false;
+            croquisFueUsado = true;
+            avisar('');
         };
         img.onerror = () => {
-            console.warn('Croquis previo: error al renderizar la imagen');
             URL.revokeObjectURL(objectUrl);
+            fallo('no se pudo renderizar la imagen');
         };
         img.src = objectUrl;
     } catch (err) {
-        console.warn('Croquis previo: fetch fallo', err);
+        fallo(err && err.message ? err.message : 'fetch fallo');
     }
 }
 
@@ -861,13 +1086,27 @@ window.onload = function() {
 
     // ===== Validaciones del flujo INTERNO =====
     // DNI y telefono: solo numeros (sin "NO INFORMA", aca todo es obligatorio numerico)
-    ['i_dni_chofer', 'i_tel_chofer', 'i_presup_monto'].forEach(id => {
+    ['i_dni_chofer', 'i_tel_chofer'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('input', () => {
             el.value = el.value.replace(/[^0-9]/g, '');
         });
     });
+
+    // El monto NO puede filtrarse borrando todo lo que no sea digito: pegar
+    // "1.234,56" daba "123456", cien veces mas. Se aceptan puntos y coma, y al
+    // salir del campo se normaliza a un numero con dos decimales.
+    const inpMonto = document.getElementById('i_presup_monto');
+    if (inpMonto) {
+        inpMonto.addEventListener('input', () => {
+            inpMonto.value = inpMonto.value.replace(/[^0-9.,]/g, '');
+        });
+        inpMonto.addEventListener('blur', () => {
+            const n = parseMontoAR(inpMonto.value);
+            inpMonto.value = (n === null) ? '' : formatMontoAR(n);
+        });
+    }
     // Patente afectada: mayusculas + solo letras y numeros
     const inpP2 = document.getElementById('i_patente2');
     if (inpP2) {
@@ -1051,6 +1290,7 @@ function iniciarFormulario() {
 // Flujo EXTERNO (denuncia con tercero) — lo que existia antes.
 function iniciarFlujoExterno() {
     modoAmpliacion = null;
+    flujoActivo = 'EXTERNO';
     limpiarStatus();
     fotosViejasMantenidas = [];
     limpiarPreviewsFotosViejas();
@@ -1058,7 +1298,41 @@ function iniciarFlujoExterno() {
     resetearCroquis();
     resetearPaso2();
     configurarVinculo();
-    // Reset de lesionados por si quedo algo de una carga anterior
+    reiniciarEnvio();
+    cargaFotosViejas = null;
+
+    // Reset COMPLETO. Antes solo se limpiaba el conductor, el croquis y los
+    // lesionados: relato, daños, datos del tercero y los archivos elegidos
+    // quedaban de la carga anterior, y era facil terminar enviando datos
+    // mezclados de dos siniestros distintos.
+    [
+        'fecha_hecho', 'hora_hecho', 'cp', 'calle', 'interseccion', 'manual_localidad',
+        'danos_propios', 'descripcion',
+        'patente_tercero', 'marca_tercero', 'seguro_tercero', 'poliza_tercero',
+        'danos_tercero', 'nombre_cond_tercero', 'dni_cond_tercero', 'tel_cond_tercero',
+        'prop_nombre', 'prop_dni', 'prop_tel'
+    ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.value = ''; el.style.borderColor = '#ddd'; }
+    });
+
+    const prov = document.getElementById('provincia');
+    if (prov) { prov.selectedIndex = 0; actualizarLocalidades(); }
+    const manual = document.getElementById('manual_localidad');
+    if (manual) manual.classList.add('hidden');
+
+    const selProp = document.getElementById('es_propietario');
+    if (selProp) selProp.value = 'SI';
+    const boxProp = document.getElementById('datos_propietario');
+    if (boxProp) boxProp.classList.add('hidden');
+
+    // Archivos elegidos en el paso 5
+    CATEGORIAS_FOTO.forEach(c => {
+        const f = document.getElementById(`f_${c}`);
+        if (f) f.value = '';
+    });
+
+    // Reset de lesionados
     const selLes = document.getElementById('hubo_lesionados');
     if (selLes) selLes.value = 'NO';
     const listaLes = document.getElementById('lista-lesionados');
@@ -1066,6 +1340,11 @@ function iniciarFlujoExterno() {
     contadorLesionados = 0;
     const bloqueLes = document.getElementById('bloque-lesionados');
     if (bloqueLes) bloqueLes.classList.add('hidden');
+
+    // Por si venia de un envio anterior
+    congelarFormulario('pantalla-formulario', false);
+    const boxDesc = document.getElementById('descarga-pdf');
+    if (boxDesc) boxDesc.classList.add('hidden');
     document.getElementById('pantalla-tipo-siniestro').classList.add('hidden');
     document.getElementById('pantalla-formulario-interno').classList.add('hidden');
     document.getElementById('pantalla-formulario').classList.remove('hidden');
@@ -1075,6 +1354,7 @@ function iniciarFlujoExterno() {
 // Flujo INTERNO (constancia entre dos vehiculos nuestros) — 2 pasos cortos.
 function iniciarFlujoInterno() {
     modoAmpliacion = null;
+    flujoActivo = 'INTERNO';
     limpiarStatus();
     document.getElementById('pantalla-tipo-siniestro').classList.add('hidden');
     document.getElementById('pantalla-formulario').classList.add('hidden');
@@ -1094,6 +1374,7 @@ function iniciarFlujoInterno() {
     if (selA) selA.value = 'UNIDAD';
     actualizarTipoAfectado();
     ultimoDniInterno = '';
+    choferInterno = null;
     statusDniInterno('');
     cambiarPasoInterno(1);
 }
@@ -1226,10 +1507,11 @@ async function iniciarAmpliacion(idx) {
     document.getElementById('pantalla-formulario').classList.remove('hidden');
     cambiarPaso(1);
 
-    // Disparamos la carga de fotos viejas en segundo plano. Cuando llega la
-    // respuesta se renderizan los thumbs en el step 5; si el usuario ya esta
-    // mirando ese paso, va a verlos aparecer.
-    cargarFotosViejas(s.id);
+    // Se dispara en segundo plano para no trabar la pantalla, pero se guarda la
+    // promesa: el envio la espera antes de armar el PDF. Antes no se esperaba,
+    // asi que una carga rapida podia mandar la ampliacion SIN las fotos
+    // originales, y el fallo solo quedaba en consola.
+    cargaFotosViejas = cargarFotosViejas(s.id);
 }
 
 function actualizarBannerAmpliacion() {
@@ -1385,12 +1667,20 @@ function validarLesionados() {
     return ok;
 }
 
-// Setea es_propietario y dispara el toggle de los campos del propietario
-function setearEsPropietario(propNombre) {
+// Setea es_propietario a partir del valor GUARDADO. Antes se deducia de si
+// prop_nombre estaba vacio, lo que daba la respuesta al reves en dos casos:
+// un propietario cargado sin nombre se leia como "SI", y alguien que cargo
+// propietario y despues cambio a "SI" se leia como "NO" (los campos quedan
+// ocultos pero conservan el texto).
+function setearEsPropietario(valorGuardado, propNombre) {
     const sel = document.getElementById('es_propietario');
-    const tieneProp = !!(propNombre && propNombre.trim());
-    sel.value = tieneProp ? 'NO' : 'SI';
-    document.getElementById('datos_propietario').classList.toggle('hidden', !tieneProp);
+    let v = String(valorGuardado || '').toUpperCase();
+    if (v !== 'SI' && v !== 'NO') {
+        // Denuncias viejas, anteriores a que se guardara el campo
+        v = (propNombre && propNombre.trim()) ? 'NO' : 'SI';
+    }
+    sel.value = v;
+    document.getElementById('datos_propietario').classList.toggle('hidden', v === 'SI');
 }
 
 function precargarFormulario(s) {
@@ -1452,7 +1742,7 @@ function precargarFormulario(s) {
     setVal2('nombre_cond_tercero', s.nombre_cond_tercero);
     setVal2('dni_cond_tercero', s.dni_cond_tercero);
     setVal2('tel_cond_tercero', s.tel_cond_tercero);
-    setearEsPropietario(s.prop_nombre);
+    setearEsPropietario(s.es_propietario, s.prop_nombre);
     setVal2('prop_nombre', s.prop_nombre);
     setVal2('prop_dni', s.prop_dni);
     setVal2('prop_tel', s.prop_tel);
@@ -1490,10 +1780,19 @@ function validarYPasar(proximoPaso) {
     });
 
     // Validacion extra al salir del paso 3: el croquis es obligatorio
-    if (proximoPaso === 4 && !croquisFueUsado) {
-        const msg = document.getElementById('croquis-error');
-        if (msg) msg.style.display = 'block';
-        valido = false;
+    if (proximoPaso === 4) {
+        if (croquisPrevioPendiente) {
+            showStatus("Esperá a que termine de cargar el croquis de la denuncia original.", "error");
+            valido = false;
+        } else if (!croquisFueUsado) {
+            const msg = document.getElementById('croquis-error');
+            if (msg) {
+                msg.style.display = 'block';
+                msg.style.color = '#d9534f';
+                msg.innerText = 'Es obligatorio dibujar el croquis del siniestro.';
+            }
+            valido = false;
+        }
     }
 
     // Al salir del paso 4: los lesionados cargados tienen que estar completos
@@ -1521,6 +1820,7 @@ function validarYPasar(proximoPaso) {
 async function enviarSiniestro() {
     const btn = document.getElementById('btn-finalizar');
     btn.innerText = "Enviando..."; btn.disabled = true;
+    congelarFormulario('pantalla-formulario', true);
     const val = (id) => document.getElementById(id) ? document.getElementById(id).value.trim().toUpperCase() : "NO INFORMA";
 
     const getLocalidadFinal = () => {
@@ -1556,11 +1856,19 @@ async function enviarSiniestro() {
             nombre_cond_tercero: val('nombre_cond_tercero'),
             dni_cond_tercero: val('dni_cond_tercero'),
             tel_cond_tercero: val('tel_cond_tercero'),
-            prop_nombre: val('prop_nombre'),
-            prop_dni: val('prop_dni'),
-            prop_tel: val('prop_tel'),
+            // La respuesta explicita, no deducida despues de si prop_nombre
+            // esta vacio. Si el conductor ES el propietario, los campos del
+            // propietario se mandan vacios aunque hayan quedado escritos.
+            es_propietario: val('es_propietario'),
+            prop_nombre: val('es_propietario') === 'SI' ? '' : val('prop_nombre'),
+            prop_dni:    val('es_propietario') === 'SI' ? '' : val('prop_dni'),
+            prop_tel:    val('es_propietario') === 'SI' ? '' : val('prop_tel'),
             hubo_lesionados: val('hubo_lesionados'),
             lesionados: leerLesionados(),
+            intervino_policia: val('intervino_policia'),
+            dependencia_tipo:   val('intervino_policia') === 'SI' ? val('dependencia_tipo')   : '',
+            dependencia_nombre: val('intervino_policia') === 'SI' ? val('dependencia_nombre') : '',
+            dependencia_nro:    val('intervino_policia') === 'SI' ? val('dependencia_nro')    : '',
             provincia: val('provincia'),
             localidad: localidadFinal,
             cp: val('cp'),
@@ -1572,69 +1880,102 @@ async function enviarSiniestro() {
             vinculo_tipo: (vinculoDatos && vinculoDatos.tipo)    || ''
         };
 
-        let resultado;
-        if (esAmpliacion) {
-            resultado = await rpc('ampliar_denuncia', {
-                p_id: modoAmpliacion.id,
-                p_patente: unidad.DOMINIO,
-                p_chasis_suffix: unidad.__chasis_suffix || '',
-                p_payload: payloadBase
-            });
+        // Si venimos de un intento anterior que ya habia creado la denuncia,
+        // NO se vuelve a crear: se retoma con el mismo numero.
+        const previo = envioReanudable('EXTERNO');
+        let idDenuncia;
+        if (previo) {
+            idDenuncia = previo.id;
+            nroSiniestroFinal = previo.nro;
         } else {
-            resultado = await rpc('crear_denuncia', { p_payload: payloadBase });
+            let resultado;
+            if (esAmpliacion) {
+                resultado = await rpc('ampliar_denuncia', {
+                    p_id: modoAmpliacion.id,
+                    p_patente: unidad.DOMINIO,
+                    p_chasis_suffix: unidad.__chasis_suffix || '',
+                    p_payload: payloadBase
+                });
+            } else {
+                resultado = await rpc('crear_denuncia', { p_payload: payloadBase });
+            }
+            if (!resultado || !resultado.success) {
+                throw new Error(esAmpliacion ? "Fallo al ampliar la denuncia." : "Fallo al crear denuncia en la base.");
+            }
+            nroSiniestroFinal = resultado.nro_siniestro;
+            idDenuncia = resultado.id;
+            envioEnCurso = {
+                flujo: 'EXTERNO', id: idDenuncia, nro: nroSiniestroFinal,
+                folder: null, linkPdf: null
+            };
         }
-        if (!resultado || !resultado.success) {
-            throw new Error(esAmpliacion ? "Fallo al ampliar la denuncia." : "Fallo al crear denuncia en la base.");
-        }
-        nroSiniestroFinal = resultado.nro_siniestro;
-        const idDenuncia = resultado.id;
 
         // ---- 2. Carpeta con el numero de siniestro ----
         // En una ampliacion los archivos van a una subcarpeta para no chocar
         // con los nombres de la carga original (el bucket no permite sobrescribir).
         const carpetaBase = `${unidad.DOMINIO}_${nroSiniestroFinal}`;
-        const folder = esAmpliacion ? `${carpetaBase}/ampliacion_${Date.now()}` : carpetaBase;
-        const tk = tokenArchivo();   // evita que el PDF sea adivinable
-        const pdfPath = `${folder}/Denuncia_Final_${tk}.pdf`;
+        // La subcarpeta de ampliacion se fija en el primer intento y se reusa,
+        // para que un reintento no genere una segunda carpeta con la mitad.
+        if (!envioEnCurso.folder) {
+            envioEnCurso.folder = esAmpliacion
+                ? `${carpetaBase}/ampliacion_${Date.now()}`
+                : carpetaBase;
+        }
+        const folder = envioEnCurso.folder;
+        const pdfPath = `${folder}/Denuncia_Final_${tokenArchivo()}.pdf`;
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
 
         // ---- 3. Armar el listado de fotos del PDF ----
         //    - Arrancamos con las VIEJAS que el usuario mantuvo (solo en ampliacion).
         //      No se vuelven a subir, se reusa la URL original.
         //    - Despues subimos las NUEVAS y las concatenamos.
-        const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros'];
-        const links = [];
+        const cats = ['propios', 'tercero', 'doc_cond', 'doc_terc', 'otros', 'policial'];
+        let links;
 
-        if (esAmpliacion && fotosViejasMantenidas.length > 0) {
-            // Las viejas ya tienen url y categoria; renumeramos los labels por categoria
-            const counts = {};
-            // Ordenamos por categoria para que en el PDF aparezcan agrupadas
-            const orden = (a, b) => cats.indexOf(a.categoria) - cats.indexOf(b.categoria);
-            fotosViejasMantenidas.slice().sort(orden).forEach(f => {
-                counts[f.categoria] = (counts[f.categoria] || 0) + 1;
-                links.push({ url: f.url, label: `${f.categoria}_${counts[f.categoria]}` });
-            });
-        }
-
-        for (const c of cats) {
-            const f = document.getElementById(`f_${c}`).files;
-            // Si ya hay viejas mantenidas de esta categoria, seguimos numerando
-            const yaContados = links.filter(l => l.label.startsWith(c + '_')).length;
-            for (let i = 0; i < f.length; i++) {
-                const blob = await comprimirImagen(f[i]);
-                const path = `${folder}/${c}_${i}_${tokenArchivo()}.jpg`;
-                btn.innerText = "Subiendo fotos...";
-                const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
-                    method: 'POST',
-                    headers: sbHeaders({ 'Content-Type': blob.type || 'image/jpeg' }),
-                    body: blob
-                });
-                if (!resUp.ok) throw new Error("Error al subir archivo fotográfico: " + c);
-                links.push({
-                    url: `${URL_API}/storage/v1/object/public/denuncias/${path}`,
-                    label: `${c}_${yaContados + i + 1}`
+        if (envioEnCurso.fotos) {
+            // Reintento: las fotos ya estan arriba, no se vuelven a subir
+            links = envioEnCurso.fotos;
+        } else {
+            links = [];
+            // En una ampliacion hay que esperar a que terminen de listarse las
+            // fotos de la carga original: si no, el PDF puede salir sin ellas.
+            if (esAmpliacion && cargaFotosViejas) {
+                btn.innerText = "Recuperando fotos anteriores...";
+                try { await cargaFotosViejas; }
+                catch (e) { console.warn('No se pudieron recuperar las fotos originales:', e); }
+            }
+            if (esAmpliacion && fotosViejasMantenidas.length > 0) {
+                // Las viejas ya tienen url y categoria; renumeramos los labels por categoria
+                const counts = {};
+                // Ordenamos por categoria para que en el PDF aparezcan agrupadas
+                const orden = (a, b) => cats.indexOf(a.categoria) - cats.indexOf(b.categoria);
+                fotosViejasMantenidas.slice().sort(orden).forEach(f => {
+                    counts[f.categoria] = (counts[f.categoria] || 0) + 1;
+                    links.push({ url: f.url, label: `${f.categoria}_${counts[f.categoria]}` });
                 });
             }
+
+            for (const c of cats) {
+                const f = document.getElementById(`f_${c}`).files;
+                // Si ya hay viejas mantenidas de esta categoria, seguimos numerando
+                const yaContados = links.filter(l => l.label.startsWith(c + '_')).length;
+                for (let i = 0; i < f.length; i++) {
+                    const blob = await comprimirImagen(f[i]);
+                    const path = `${folder}/${c}_${i}_${tokenArchivo()}.${extensionDe(blob)}`;
+                    btn.innerText = "Subiendo fotos...";
+                    const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
+                        method: 'POST',
+                        headers: sbHeaders({ 'Content-Type': blob.type || 'image/jpeg' }),
+                        body: blob
+                    });
+                    if (!resUp.ok) throw new Error("Error al subir archivo fotográfico: " + c);
+                    links.push({
+                        url: `${URL_API}/storage/v1/object/public/denuncias/${path}`,
+                        label: `${c}_${yaContados + i + 1}`
+                    });
+                }
+            }
+            envioEnCurso.fotos = links;
         }
         btn.innerText = "Enviando...";
 
@@ -1665,9 +2006,6 @@ async function enviarSiniestro() {
 
         // ---- 4. Llenar template con el SN ya asignado ----
         setVal('p-sini-id', nroSiniestroFinal);
-        // Pie de la hoja 2, donde antes estaba el bloque de firma
-        setVal('p-pie-sn', nroSiniestroFinal);
-        setVal('p-pie-fecha', hoyAR());
         setVal('p-v-aseg', unidad.ASEGURADORA_LEGAL || unidad.ASEGURADORA);
         setVal('p-v-pol', unidad.POLIZA);
         setVal('p-fecha', fechaAR(val('fecha_hecho'))); setVal('p-hora', val('hora_hecho'));
@@ -1720,7 +2058,28 @@ async function enviarSiniestro() {
         setVal('p-t-se', val('seguro_tercero')); setVal('p-t-po', val('poliza_tercero'));
         setVal('p-t-dan', val('danos_tercero'));
 
-        // Seccion 8: lesionados
+        // Seccion 7: intervencion policial
+        const contPol = document.getElementById('p-policia');
+        if (contPol) {
+            if (val('intervino_policia') === 'SI') {
+                const tipos = { COMISARIA: 'Comisaría', FISCALIA: 'Fiscalía', AMBAS: 'Comisaría y Fiscalía' };
+                const t = tipos[val('dependencia_tipo')] || val('dependencia_tipo');
+                contPol.innerHTML = `
+                    <div style="display:grid; grid-template-columns:1fr 1.4fr 1fr;">
+                      <div><b>Intervino:</b> SÍ</div>
+                      <div><b>Dependencia:</b> ${t} ${val('dependencia_nombre')}</div>
+                      <div><b>Nº actuación:</b> ${val('dependencia_nro')}</div>
+                    </div>`;
+            } else {
+                contPol.innerHTML = '<span>No intervino la policía.</span>';
+            }
+        }
+
+        // Seccion 8: lesionados.
+        // Va como tabla compacta y no como fichas sueltas: la hoja 2 tiene alto
+        // fijo (296mm) y las fichas ocupaban ~89px cada una, con lo cual entraba
+        // una sola antes de desbordar. Asi entran hasta 6 comodos.
+        // Si hubiera mas, se achica la letra en vez de romper la maquetacion.
         const contLes = document.getElementById('p-lesionados');
         if (contLes) {
             const les = leerLesionados();
@@ -1729,23 +2088,32 @@ async function enviarSiniestro() {
             } else {
                 const escP = (s) => String(s == null ? '' : s)
                     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                contLes.innerHTML = les.map((l, i) => `
-                    <div style="border:1px solid #ccc; padding:6px 8px; margin-bottom:6px;">
-                      <div style="font-weight:bold; margin-bottom:3px;">Lesionado ${i + 1}</div>
-                      <div style="display:grid; grid-template-columns:1.6fr 1fr 1fr;">
-                        <div><b>Apellido y Nombre:</b> ${escP(l.apellido)} ${escP(l.nombre)}</div>
-                        <div><b>DNI:</b> ${escP(l.dni)}</div>
-                        <div><b>Género:</b> ${escP(l.genero)}</div>
-                      </div>
-                      <div style="display:grid; grid-template-columns:1.6fr 1fr;">
-                        <div><b>Domicilio:</b> ${escP(l.domicilio)}</div>
-                        <div><b>Teléfono:</b> ${escP(l.telefono)}</div>
-                      </div>
-                      <div style="display:grid; grid-template-columns:1.6fr 1fr;">
-                        <div><b>Lesión:</b> ${escP(l.lesion)}</div>
-                        <div><b>Hospital:</b> ${escP(l.hospital)}</div>
-                      </div>
-                    </div>`).join('');
+                // Ajuste de tamaño segun cuantos sean, para no desbordar la hoja
+                const pt = les.length <= 4 ? '8.5pt' : (les.length <= 6 ? '7.5pt' : '6.5pt');
+                contLes.style.fontSize = pt;
+
+                const filas = les.map((l, i) => `
+                    <tr style="border-top:1px solid #ddd;">
+                      <td style="padding:2px 4px; vertical-align:top; white-space:nowrap;"><b>${i + 1}</b></td>
+                      <td style="padding:2px 4px; vertical-align:top;">
+                        <b>${escP(l.apellido)} ${escP(l.nombre)}</b> ·
+                        DNI ${escP(l.dni)} · ${escP(l.genero)} · Tel ${escP(l.telefono)}<br>
+                        ${escP(l.domicilio)}
+                      </td>
+                      <td style="padding:2px 4px; vertical-align:top;">
+                        ${escP(l.lesion)}<br>${escP(l.hospital)}
+                      </td>
+                    </tr>`).join('');
+
+                contLes.innerHTML = `
+                    <table style="width:100%; border-collapse:collapse; line-height:1.25;">
+                      <tr style="font-weight:bold; text-align:left;">
+                        <td style="padding:2px 4px; width:16px;">#</td>
+                        <td style="padding:2px 4px;">Datos de la persona</td>
+                        <td style="padding:2px 4px; width:38%;">Lesión / Hospital</td>
+                      </tr>
+                      ${filas}
+                    </table>`;
             }
         }
 
@@ -1781,7 +2149,9 @@ async function enviarSiniestro() {
         for (let intento = 0; intento < 3 && !pdfOk; intento++) {
             const pathIntento = (intento === 0)
                 ? pdfPath
-                : `${folder}/Denuncia_Final_r${intento}_${Date.now()}.pdf`;
+                // Con tokenArchivo() y no Date.now(): el nombre tiene que seguir
+                // siendo imposible de adivinar tambien en los reintentos.
+                : `${folder}/Denuncia_Final_r${intento}_${tokenArchivo()}.pdf`;
             try {
                 const resPdfUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${pathIntento}`, {
                     method: 'POST',
@@ -1811,16 +2181,20 @@ async function enviarSiniestro() {
         // ---- 6. Guardar en la denuncia los links del PDF y del croquis ----
         // Como la denuncia se creo antes de subir los archivos, estos dos campos
         // se completan recien ahora.
-        try {
-            await rpc('finalizar_denuncia', {
-                p_id: idDenuncia,
-                p_patente: unidad.DOMINIO,
-                p_link_pdf: linkPdfFinalReal,
-                p_croquis_url: croquisUrl
-            });
-        } catch (e) {
-            console.warn('No se pudieron guardar los links en la denuncia:', e.message);
+        // Si esto falla, la denuncia queda en la base pero sin el PDF vinculado:
+        // el panel la muestra como "Sin PDF". Antes el error iba solo a consola
+        // y se anunciaba EXITO igual. Ahora corta.
+        const cierre = await rpc('finalizar_denuncia', {
+            p_id: idDenuncia,
+            p_patente: unidad.DOMINIO,
+            p_link_pdf: linkPdfFinalReal,
+            p_croquis_url: croquisUrl
+        });
+        if (!cierre || !cierre.success) {
+            throw new Error("El PDF se generó pero no quedó vinculado a la denuncia "
+                + nroSiniestroFinal + ". Reintentá; si sigue fallando, avisá a administración.");
         }
+        envioEnCurso.linkPdf = linkPdfFinalReal;
 
         // ---- 7. Enviar mail ----
         // Variables disponibles en el template de EmailJS:
@@ -1843,15 +2217,27 @@ async function enviarSiniestro() {
             aviso_ampliacion: esAmpliacion ? " - AMPLIACION" : ""
         });
 
+        reiniciarEnvio();
+        ofrecerDescargaPDF(pdfBlob, `Denuncia_${nroSiniestroFinal}_${unidad.DOMINIO}.pdf`);
         const msgFinal = esAmpliacion
             ? `¡ÉXITO! Denuncia ${nroSiniestroFinal} ampliada correctamente.`
             : `¡ÉXITO! Denuncia cargada: ${nroSiniestroFinal}`;
         showStatus(msgFinal, "success");
-        setTimeout(() => location.reload(), 3500);
+        // No se recarga sola: si lo hiciera, se perderia el PDF descargable.
+        // El chofer recarga cuando termina, con el boton de abajo.
+        mostrarVolverAlInicio();
     } catch (e) {
-        showStatus("ERROR CRÍTICO: " + e.message, "error");
+        congelarFormulario('pantalla-formulario', false);
+        // Si la denuncia ya se creo, hay que decirlo: el chofer tiene que saber
+        // que NO se perdio y que reintentar no la va a duplicar.
+        const yaCreada = envioEnCurso && envioEnCurso.id;
+        showStatus(yaCreada
+            ? `La denuncia ${envioEnCurso.nro} YA quedó guardada, pero falló un paso posterior: `
+              + e.message + ' Podés reintentar: se retoma la misma denuncia, no se crea otra.'
+            : "ERROR: " + e.message + ' La denuncia NO se guardó.',
+            "error");
         btn.disabled = false;
-        btn.innerText = "Finalizar Denuncia";
+        btn.innerText = yaCreada ? "Reintentar envío" : "Finalizar Denuncia";
     }
 }
 
@@ -1923,6 +2309,15 @@ async function validarYPasarInterno(proximoPaso) {
                 return;
             }
 
+            // El dominio pudo haber cambiado mientras se validaba: si no
+            // coincide con lo que hay en el campo, no se avanza.
+            const domAhora = document.getElementById('i_patente2').value.trim().toUpperCase();
+            if (domAhora !== dom2) {
+                status.style.color = "#d9534f";
+                status.innerText = "El dominio cambió mientras se validaba. Probá de nuevo.";
+                return;
+            }
+
             inputP2.style.borderColor = "#ddd";
             unidad2 = {
                 DOMINIO: dom2,
@@ -1942,12 +2337,32 @@ async function validarYPasarInterno(proximoPaso) {
 }
 
 function abrirModalInterno() {
-    modoInterno = true;
+    // Validar ANTES de abrir el modal. Estos pasos no son un submit nativo,
+    // asi que el required del HTML no se dispara solo: se podia confirmar una
+    // constancia sin relato.
+    if (!validarPasoInterno2()) return;
+
+    flujoActivo = 'INTERNO';
     const titulo = document.getElementById('modal-titulo');
     const detalle = document.getElementById('modal-detalle');
     titulo.innerText = "¿Generar constancia interna?";
     detalle.innerText = "Se guardará el registro en la base, se generará el PDF y se enviará por mail. No inicia trámite con aseguradora.";
     document.getElementById('modal-confirmacion').classList.remove('hidden');
+}
+
+// Chequea los obligatorios del ultimo paso del interno. Ademas de checkValidity
+// se exige contenido real: un campo con solo espacios no cuenta como completo.
+function validarPasoInterno2() {
+    const paso = document.getElementById('step-int-2');
+    if (!paso) return true;
+    let ok = true;
+    paso.querySelectorAll('[required]').forEach(i => {
+        const vacio = !String(i.value || '').trim();
+        if (vacio || !i.checkValidity()) { i.style.borderColor = 'red'; ok = false; }
+        else { i.style.borderColor = '#ddd'; }
+    });
+    if (!ok) showStatus("Faltan datos obligatorios en este paso.", "error");
+    return ok;
 }
 
 // ============================================================================
@@ -2027,9 +2442,125 @@ function initAutocompletadoRC() {
     });
 }
 
+// ============================================================================
+// AMPLIACION DE RIESGOS VARIOS — solo administracion
+// A diferencia de las de camion, estas no tienen limite de "mismo dia": el caso
+// de uso es justamente que los datos del damnificado llegan despues.
+// Por eso se protegen con clave, que se valida CONTRA EL SERVIDOR. La clave no
+// esta en este archivo: solo viaja lo que escribe el usuario, y el backend la
+// compara contra un hash. Tiene freno de 10 intentos fallidos por hora.
+// ============================================================================
+let claveRV = '';            // solo en memoria, mientras dura la pantalla
+let ampliandoRV = null;      // {id, nro} de la denuncia que se esta ampliando
+
+function abrirAmpliarRV() {
+    limpiarStatus();
+    claveRV = '';
+    document.getElementById('rv_clave').value = '';
+    document.getElementById('rv-lista').innerHTML = '';
+    document.getElementById('rv-clave-status').innerText = '';
+    document.getElementById('pantalla-validacion').classList.add('hidden');
+    document.getElementById('pantalla-ampliar-rv').classList.remove('hidden');
+}
+
+function cerrarAmpliarRV() {
+    claveRV = '';
+    document.getElementById('pantalla-ampliar-rv').classList.add('hidden');
+    document.getElementById('pantalla-validacion').classList.remove('hidden');
+}
+
+async function listarRVAmpliables() {
+    const clave = document.getElementById('rv_clave').value;
+    const st = document.getElementById('rv-clave-status');
+    const lista = document.getElementById('rv-lista');
+    lista.innerHTML = '';
+    st.innerText = 'Verificando...'; st.className = 'dni-status buscando';
+
+    try {
+        const r = await rpc('listar_rv_ampliables', { p_clave: clave });
+        if (!r || !r.ok) {
+            st.innerText = 'Clave incorrecta.'; st.className = 'dni-status aviso';
+            return;
+        }
+        claveRV = clave;
+        const denuncias = r.denuncias || [];
+        if (!denuncias.length) {
+            st.innerText = 'No hay denuncias de Riesgos Varios para ampliar.';
+            st.className = 'dni-status aviso';
+            return;
+        }
+        st.innerText = `${denuncias.length} denuncia${denuncias.length === 1 ? '' : 's'} disponible${denuncias.length === 1 ? '' : 's'}.`;
+        st.className = 'dni-status ok';
+
+        const esc = (s) => String(s == null ? '' : s)
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;');
+        const fmt = (f) => {
+            if (!f) return 'S/D';
+            const p = String(f).slice(0,10).split('-');
+            return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : f;
+        };
+        window.__rvPrevias = {};
+        lista.innerHTML = denuncias.map((d, i) => {
+            window.__rvPrevias[i] = d;
+            return `
+            <div class="sin-card ampliable">
+                <div class="sin-info">
+                    <strong>${esc(d.nro_siniestro)}</strong><br>
+                    ${esc(fmt(d.fecha_hecho))} ${esc(d.hora_hecho || '')} · ${esc(d.nombre_chofer || 'S/D')}<br>
+                    ${esc(d.lugar || '')}
+                </div>
+                <button class="btn-ampliar" onclick="iniciarAmpliacionRV(${i})">Ampliar</button>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        st.innerText = 'Error: ' + err.message;
+        st.className = 'dni-status aviso';
+    }
+}
+
+async function iniciarAmpliacionRV(idx) {
+    const resumen = window.__rvPrevias && window.__rvPrevias[idx];
+    if (!resumen) return;
+    try {
+        const r = await rpc('traer_rv_ampliable', { p_id: resumen.id, p_clave: claveRV });
+        if (!r || !r.ok) { showStatus('No se pudo recuperar la denuncia.', 'error'); return; }
+        const d = r.denuncia;
+
+        ampliandoRV = { id: d.id, nro: d.nro_siniestro };
+        iniciarFlujoRC();          // deja el formulario limpio y visible
+        ampliandoRV = { id: d.id, nro: d.nro_siniestro };   // iniciarFlujoRC lo borra
+
+        // Precarga
+        const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+        set('rc_dni_chofer', d.dni_chofer);       set('rc_nombre_chofer', d.nombre_chofer);
+        set('rc_fecha', d.fecha_hecho);           set('rc_hora', d.hora_hecho);
+        set('rc_calle', d.calle_interseccion);    set('rc_localidad', d.localidad);
+        set('rc_provincia', d.provincia);         set('rc_tel_contacto', d.tel_chofer);
+        set('rc_mail_contacto', d.mail_contacto); set('rc_danos', d.danos_tercero);
+        set('rc_relato', d.relato);
+        set('rc_terc_nombre', d.nombre_cond_tercero); set('rc_terc_doc', d.dni_cond_tercero);
+        set('rc_terc_tel', d.tel_cond_tercero);       set('rc_terc_dom', d.tercero_domicilio);
+        set('rc_terc_bien', d.patente_tercero);
+        const selA = document.getElementById('rc_autoridad');
+        if (selA && d.intervino_autoridad) selA.value = d.intervino_autoridad;
+        choferRC = (d.legajo_chofer || d.op_chofer)
+            ? { legajo: d.legajo_chofer, op: d.op_chofer } : null;
+        ultimoDniRC = String(d.dni_chofer || '').replace(/\D/g, '');
+
+        showStatus(`Ampliando la denuncia ${d.nro_siniestro}. Completá lo que falte y finalizá.`, 'success');
+    } catch (err) {
+        showStatus('Error: ' + err.message, 'error');
+    }
+}
+
 function iniciarFlujoRC() {
     modoAmpliacion = null;
+    ampliandoRV = null;
+    flujoActivo = 'RC';
     limpiarStatus();
+    reiniciarEnvio();
+    document.getElementById('pantalla-ampliar-rv').classList.add('hidden');
     unidad = {};
     datosEmpresa = {};
     choferRC = null;
@@ -2038,7 +2569,7 @@ function iniciarFlujoRC() {
 
     ['rc_dni_chofer','rc_nombre_chofer','rc_calle','rc_localidad','rc_provincia',
      'rc_tel_contacto','rc_mail_contacto','rc_danos','rc_relato',
-     'rc_terc_nombre','rc_terc_doc','rc_terc_tel','rc_terc_bien'].forEach(id => {
+     'rc_terc_nombre','rc_terc_doc','rc_terc_tel','rc_terc_dom','rc_terc_bien'].forEach(id => {
         const el = document.getElementById(id);
         if (el) { el.value = ''; el.style.borderColor = '#ddd'; el.classList.remove('autocompletado'); }
     });
@@ -2093,8 +2624,20 @@ function validarYPasarRC(proximoPaso) {
 }
 
 function abrirModalRC() {
-    modoRC = true;
-    modoInterno = false;
+    // Misma validacion que el interno: sin esto se podia confirmar sin daños
+    // ni relato y el error aparecia recien cuando lo rechazaba la base.
+    const paso = document.getElementById('step-rc-2');
+    if (paso) {
+        let ok = true;
+        paso.querySelectorAll('[required]').forEach(i => {
+            const vacio = !String(i.value || '').trim();
+            if (vacio || !i.checkValidity()) { i.style.borderColor = 'red'; ok = false; }
+            else { i.style.borderColor = '#ddd'; }
+        });
+        if (!ok) { showStatus("Faltan datos obligatorios en este paso.", "error"); return; }
+    }
+
+    flujoActivo = 'RC';
     document.getElementById('modal-titulo').innerText = "¿Generar la denuncia?";
     document.getElementById('modal-detalle').innerText =
         "Se guardará el registro, se generará el PDF y se enviará por mail.";
@@ -2104,6 +2647,7 @@ function abrirModalRC() {
 async function enviarSiniestroRC() {
     const btn = document.getElementById('btn-finalizar-rc');
     btn.innerText = "Enviando..."; btn.disabled = true;
+    congelarFormulario('pantalla-formulario-rc', true);
     const val    = (id) => { const e = document.getElementById(id); return e ? e.value.trim().toUpperCase() : ""; };
     const valRaw = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : ""; };
 
@@ -2129,25 +2673,46 @@ async function enviarSiniestroRC() {
             nombre_cond_tercero: val('rc_terc_nombre'),
             dni_cond_tercero: val('rc_terc_doc'),
             tel_cond_tercero: val('rc_terc_tel'),
+            tercero_domicilio: val('rc_terc_dom'),
             patente_tercero: val('rc_terc_bien')
         };
 
-        const resultado = await rpc('crear_denuncia', { p_payload: payload });
-        if (!resultado || !resultado.success) throw new Error("Fallo al crear la denuncia en la base.");
-        nroSiniestroFinal = resultado.nro_siniestro;
-        const idDenuncia = resultado.id;
+        const previo = envioReanudable('RC');
+        let idDenuncia;
+        if (previo) {
+            idDenuncia = previo.id;
+            nroSiniestroFinal = previo.nro;
+        } else if (ampliandoRV) {
+            // Ampliacion: actualiza la denuncia existente, no crea una nueva
+            const r = await rpc('ampliar_rv', {
+                p_id: ampliandoRV.id, p_clave: claveRV, p_payload: payload
+            });
+            if (!r || !r.success) throw new Error("Fallo al ampliar la denuncia.");
+            nroSiniestroFinal = r.nro_siniestro;
+            idDenuncia = r.id;
+            envioEnCurso = { flujo: 'RC', id: idDenuncia, nro: nroSiniestroFinal };
+        } else {
+            const resultado = await rpc('crear_denuncia', { p_payload: payload });
+            if (!resultado || !resultado.success) throw new Error("Fallo al crear la denuncia en la base.");
+            nroSiniestroFinal = resultado.nro_siniestro;
+            idDenuncia = resultado.id;
+            envioEnCurso = { flujo: 'RC', id: idDenuncia, nro: nroSiniestroFinal };
+        }
 
-        // 2. Carpeta con el numero de siniestro
-        const folder = `RC_${nroSiniestroFinal}`;
-        const pdfPath = `${folder}/Denuncia_RC_${tokenArchivo()}.pdf`;
+        // 2. Carpeta con el numero de denuncia. Las ampliaciones van a una
+        // subcarpeta para no chocar con los archivos de la carga original.
+        const folder = ampliandoRV
+            ? `RV_${nroSiniestroFinal}/ampliacion_${Date.now()}`
+            : `RV_${nroSiniestroFinal}`;
+        const pdfPath = `${folder}/Denuncia_RV_${tokenArchivo()}.pdf`;
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
 
-        // 3. Fotos
-        const links = [];
-        const files = document.getElementById('rc_fotos').files;
+        // 3. Fotos. En un reintento no se vuelven a subir.
+        const links = envioEnCurso.fotos || [];
+        const files = envioEnCurso.fotos ? [] : document.getElementById('rc_fotos').files;
         for (let i = 0; i < files.length; i++) {
             const blob = await comprimirImagen(files[i]);
-            const path = `${folder}/rc_${i}_${tokenArchivo()}.jpg`;
+            const path = `${folder}/rc_${i}_${tokenArchivo()}.${extensionDe(blob)}`;
             btn.innerText = "Subiendo fotos...";
             const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
                 method: 'POST',
@@ -2157,6 +2722,7 @@ async function enviarSiniestroRC() {
             if (!resUp.ok) throw new Error("Error al subir foto " + (i + 1));
             links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, label: `foto_${i + 1}` });
         }
+        envioEnCurso.fotos = links;
         btn.innerText = "Enviando...";
 
         // 4. Llenar el template.
@@ -2186,12 +2752,14 @@ async function enviarSiniestroRC() {
         if (dam) {
             const n = val('rc_terc_nombre'), d = val('rc_terc_doc');
             const t = val('rc_terc_tel'),    b = val('rc_terc_bien');
-            dam.innerHTML = (n || d || t || b)
+            const dm = val('rc_terc_dom');
+            dam.innerHTML = (n || d || t || b || dm)
                 ? `<div><b>Nombre / Razón social:</b> ${n || '—'}</div>
                    <div style="display:grid; grid-template-columns:1fr 1fr;">
                      <div><b>DNI / CUIT:</b> ${d || '—'}</div>
                      <div><b>Teléfono:</b> ${t || '—'}</div>
                    </div>
+                   <div><b>Domicilio:</b> ${dm || '—'}</div>
                    <div><b>Bien dañado:</b> ${b || '—'}</div>`
                 : '<span style="color:#666;">No se registraron datos del damnificado al momento de la denuncia.</span>';
         }
@@ -2218,7 +2786,7 @@ async function enviarSiniestroRC() {
         let pdfOk = false, ultimoError = '', linkPdfFinalReal = linkFinal;
         for (let intento = 0; intento < 3 && !pdfOk; intento++) {
             const pathIntento = (intento === 0)
-                ? pdfPath : `${folder}/Denuncia_RC_r${intento}_${tokenArchivo()}.pdf`;
+                ? pdfPath : `${folder}/Denuncia_RV_r${intento}_${tokenArchivo()}.pdf`;
             try {
                 const resPdfUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${pathIntento}`, {
                     method: 'POST',
@@ -2240,19 +2808,21 @@ async function enviarSiniestroRC() {
         }
         if (!pdfOk) throw new Error("Se cargó la denuncia pero falló al subir el PDF (" + ultimoError + ").");
 
-        // 6. Guardar el link
-        try {
-            await rpc('finalizar_denuncia', {
-                p_id: idDenuncia, p_patente: '',
-                p_link_pdf: linkPdfFinalReal, p_croquis_url: ''
-            });
-        } catch (e) { console.warn('No se pudo guardar el link del PDF:', e.message); }
+        // 6. Guardar el link. Si falla, corta: no se anuncia exito con el PDF suelto.
+        const cierreRC = await rpc('finalizar_denuncia', {
+            p_id: idDenuncia, p_patente: '',
+            p_link_pdf: linkPdfFinalReal, p_croquis_url: ''
+        });
+        if (!cierreRC || !cierreRC.success) {
+            throw new Error("El PDF se generó pero no quedó vinculado al registro "
+                + nroSiniestroFinal + ". Reintentá.");
+        }
 
         // 7. Mail
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
             // OJO: no decir "daño a terceros" a secas, que es como se llama la
-            // denuncia normal de camion. Esto es la de Responsabilidad Civil.
-            asunto: "Posible siniestro de Responsabilidad Civil - " + nroSiniestroFinal
+            // denuncia normal de camion. Esta es la de Riesgos Varios.
+            asunto: "Denuncia Riesgos Varios - " + nroSiniestroFinal
                     + " - " + val('rc_nombre_chofer'),
             link_pdf: linkPdfFinalReal,
             link: linkPdfFinalReal,
@@ -2261,12 +2831,20 @@ async function enviarSiniestroRC() {
             tipo_envio: 'RC'
         });
 
+        reiniciarEnvio();
+        ofrecerDescargaPDF(pdfBlob, `Riesgos_Varios_${nroSiniestroFinal}.pdf`);
         showStatus(`¡ÉXITO! Registro ${nroSiniestroFinal} generado.`, "success");
-        setTimeout(() => location.reload(), 4000);
+        mostrarVolverAlInicio();
 
     } catch (e) {
-        showStatus("ERROR: " + e.message, "error");
-        btn.innerText = "Finalizar Denuncia"; btn.disabled = false;
+        congelarFormulario('pantalla-formulario-rc', false);
+        const yaCreada = envioEnCurso && envioEnCurso.id;
+        showStatus(yaCreada
+            ? `El registro ${envioEnCurso.nro} YA quedó guardado, pero falló un paso posterior: `
+              + e.message + ' Podés reintentar: se retoma el mismo registro.'
+            : "ERROR: " + e.message + ' El registro NO se guardó.', "error");
+        btn.innerText = yaCreada ? "Reintentar envío" : "Finalizar Denuncia";
+        btn.disabled = false;
     }
 }
 
@@ -2281,6 +2859,7 @@ function volverASelector() {
 async function enviarSiniestroInterno() {
     const btn = document.getElementById('btn-finalizar-int');
     btn.innerText = "Enviando..."; btn.disabled = true;
+    congelarFormulario('pantalla-formulario-interno', true);
     const val = (id) => {
         const el = document.getElementById(id);
         return el ? el.value.trim().toUpperCase() : "";
@@ -2310,30 +2889,42 @@ async function enviarSiniestroInterno() {
             tipo_siniestro: 'INTERNO',
             tipo_afectado: val('i_tipo_afectado') || 'UNIDAD',
             bien_afectado: valRaw('i_bien_afectado'),
-            legajo_chofer: (choferEncontrado && choferEncontrado.legajo) || '',
-            op_chofer: (choferEncontrado && choferEncontrado.op) || '',
-            presupuesto_monto: valRaw('i_presup_monto'),
+            legajo_chofer: (choferInterno && choferInterno.legajo) || '',
+            op_chofer: (choferInterno && choferInterno.op) || '',
+            // Se guarda el numero normalizado, no lo que se vio en pantalla
+            presupuesto_monto: (() => {
+                const n = parseMontoAR(valRaw('i_presup_monto'));
+                return n === null ? '' : String(n);
+            })(),
             presupuesto_tipo: val('i_presup_tipo')
         };
 
-        const resultado = await rpc('crear_denuncia', { p_payload: payload });
-        if (!resultado || !resultado.success) {
-            throw new Error("Fallo al crear constancia en la base.");
+        const previo = envioReanudable('INTERNO');
+        let idDenuncia;
+        if (previo) {
+            idDenuncia = previo.id;
+            nroSiniestroFinal = previo.nro;
+        } else {
+            const resultado = await rpc('crear_denuncia', { p_payload: payload });
+            if (!resultado || !resultado.success) {
+                throw new Error("Fallo al crear constancia en la base.");
+            }
+            nroSiniestroFinal = resultado.nro_siniestro;
+            idDenuncia = resultado.id;
+            envioEnCurso = { flujo: 'INTERNO', id: idDenuncia, nro: nroSiniestroFinal };
         }
-        nroSiniestroFinal = resultado.nro_siniestro;
-        const idDenuncia = resultado.id;
 
         // ---- 2. Carpeta con el numero de constancia ----
         const folder = `${unidad.DOMINIO}_${nroSiniestroFinal}`;
         const pdfPath = `${folder}/Constancia_Interna_${tokenArchivo()}.pdf`;
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
 
-        // ---- 3. Subir fotos ----
-        const links = [];
-        const files = document.getElementById('i_fotos').files;
+        // ---- 3. Subir fotos. En un reintento no se vuelven a subir. ----
+        const links = envioEnCurso.fotos || [];
+        const files = envioEnCurso.fotos ? [] : document.getElementById('i_fotos').files;
         for (let i = 0; i < files.length; i++) {
             const blob = await comprimirImagen(files[i]);
-            const path = `${folder}/interno_${i}_${tokenArchivo()}.jpg`;
+            const path = `${folder}/interno_${i}_${tokenArchivo()}.${extensionDe(blob)}`;
             btn.innerText = "Subiendo fotos...";
             const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
                 method: 'POST',
@@ -2346,6 +2937,7 @@ async function enviarSiniestroInterno() {
                 label: `foto_${i + 1}`
             });
         }
+        envioEnCurso.fotos = links;
         btn.innerText = "Enviando...";
 
         // ---- 4. Llenar template PDF interno ----
@@ -2375,8 +2967,8 @@ async function enviarSiniestroInterno() {
             : tipoP === 'ESTIMADO' ? 'Estimado'
             : 'A presupuestar';
         setVal('pi-presup-tipo', tipoLabel);
-        const monto = valRaw('i_presup_monto');
-        setVal('pi-presup-monto', monto ? `$ ${monto}` : '—');
+        const montoN = parseMontoAR(valRaw('i_presup_monto'));
+        setVal('pi-presup-monto', montoN === null ? '—' : '$ ' + formatMontoAR(montoN));
 
         const cont = document.getElementById('pi-lista-fotos');
         if (cont) {
@@ -2402,7 +2994,7 @@ async function enviarSiniestroInterno() {
         for (let intento = 0; intento < 3 && !pdfOk; intento++) {
             const pathIntento = (intento === 0)
                 ? pdfPath
-                : `${folder}/Constancia_Interna_r${intento}_${Date.now()}.pdf`;
+                : `${folder}/Constancia_Interna_r${intento}_${tokenArchivo()}.pdf`;
             try {
                 const resPdfUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${pathIntento}`, {
                     method: 'POST',
@@ -2427,15 +3019,15 @@ async function enviarSiniestroInterno() {
             throw new Error("Se cargó la constancia pero falló al subir el PDF (" + ultimoError + ").");
         }
         // ---- 6. Guardar el link del PDF en la constancia ----
-        try {
-            await rpc('finalizar_denuncia', {
-                p_id: idDenuncia,
-                p_patente: unidad.DOMINIO,
-                p_link_pdf: linkPdfFinalReal,
-                p_croquis_url: ''
-            });
-        } catch (e) {
-            console.warn('No se pudo guardar el link del PDF:', e.message);
+        const cierreInt = await rpc('finalizar_denuncia', {
+            p_id: idDenuncia,
+            p_patente: unidad.DOMINIO,
+            p_link_pdf: linkPdfFinalReal,
+            p_croquis_url: ''
+        });
+        if (!cierreInt || !cierreInt.success) {
+            throw new Error("El PDF se generó pero no quedó vinculado a la constancia "
+                + nroSiniestroFinal + ". Reintentá.");
         }
 
         // ---- 7. Enviar mail con asunto distinto ----
@@ -2455,11 +3047,18 @@ async function enviarSiniestroInterno() {
             aviso_ampliacion: ""
         });
 
+        reiniciarEnvio();
+        ofrecerDescargaPDF(pdfBlob, `Constancia_${nroSiniestroFinal}_${unidad.DOMINIO}.pdf`);
         showStatus(`¡ÉXITO! Constancia interna ${nroSiniestroFinal} generada.`, "success");
-        setTimeout(() => location.reload(), 3500);
+        mostrarVolverAlInicio();
     } catch (e) {
-        showStatus("ERROR: " + e.message, "error");
+        congelarFormulario('pantalla-formulario-interno', false);
+        const yaCreada = envioEnCurso && envioEnCurso.id;
+        showStatus(yaCreada
+            ? `La constancia ${envioEnCurso.nro} YA quedó guardada, pero falló un paso posterior: `
+              + e.message + ' Podés reintentar: se retoma la misma constancia.'
+            : "ERROR: " + e.message + ' La constancia NO se guardó.', "error");
         btn.disabled = false;
-        btn.innerText = "Finalizar Constancia";
+        btn.innerText = yaCreada ? "Reintentar envío" : "Finalizar Constancia";
     }
 }

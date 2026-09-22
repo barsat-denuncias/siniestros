@@ -49,6 +49,9 @@
         .chip { display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
         .chip-externo { background: #cfe2ff; color: #084298; }
         .chip-interno { background: #d1e7dd; color: #0f5132; }
+        .chip-rc      { background: #ffe9c9; color: #8a4b00; }
+        #error-carga  { display: none; background: #ffc7ce; color: #9c0006; border-radius: 6px;
+                        padding: 12px 16px; margin-bottom: 15px; font-size: 14px; font-weight: bold; }
 
         #filtro-tipo { padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; background: white; }
         .resumen-internos { background: #e8f5ee; border: 1px solid #c3e6cb; border-radius: 8px; padding: 10px 16px; font-size: 13px; color: #155724; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
@@ -107,12 +110,15 @@
             <span><b id="total-internos">$ 0</b> · <span id="cant-internos">0</span> constancias</span>
         </div>
 
+        <div id="error-carga"></div>
+
         <div class="controls">
             <input type="text" id="busqueda" placeholder="Filtrar por chofer, patente, provincia o empresa..." onkeyup="filtrarTabla()">
             <select id="filtro-tipo" onchange="aplicarFiltroTipo()">
                 <option value="TODOS">Todos</option>
                 <option value="EXTERNO">Solo Externos</option>
                 <option value="INTERNO">Solo Internos</option>
+                <option value="RC">Solo Riesgos Varios</option>
             </select>
         </div>
 
