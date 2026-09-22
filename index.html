@@ -6,7 +6,7 @@
     <title>App Siniestros</title>
     <!-- El ?v= evita que el navegador sirva una version cacheada.
          Al cambiar app.js o style.css, subir el numero. -->
-    <link rel="stylesheet" href="style.css?v=21">
+    <link rel="stylesheet" href="style.css?v=22">
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -14,14 +14,19 @@
     <div class="card">
         <div id="status-msg"></div>
 
-        <!-- Aparece al terminar: permite bajar el PDF en el momento para
-             imprimirlo y que el chofer lo firme. -->
-        <div id="descarga-pdf" class="hidden" style="margin-bottom:15px;">
-            <button type="button" id="btn-descargar-pdf" onclick="descargarPDFGenerado()"
-                    style="background:#0f5132;">Descargar PDF</button>
-            <p style="font-size:11px; color:#888; margin-top:4px;">
-                También te va a llegar por mail. Descargalo si necesitás imprimirlo o firmarlo.
-            </p>
+        <!-- Pantalla final. Reemplaza a todo lo demas: no queda el formulario
+             abajo ni el boton "Enviando...". -->
+        <div id="pantalla-exito" class="hidden">
+            <div class="exito-icono">✓</div>
+            <h2 id="exito-titulo">Denuncia cargada</h2>
+            <p id="exito-nro" class="exito-nro"></p>
+            <button type="button" id="btn-descargar-pdf" class="btn-descarga" onclick="descargarPDFGenerado()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>
+                </svg>
+                Descargar PDF
+            </button>
+            <button type="button" class="btn-secundario" onclick="location.reload()">Volver al inicio</button>
         </div>
 
         <div id="pantalla-validacion">
@@ -32,9 +37,9 @@
             </form>
             <p id="mensaje-error" class="error"></p>
 
-            <p style="font-size:12px; color:#888; margin:22px 0 8px;">¿El daño no involucró ningún vehículo?</p>
-            <button type="button" class="btn-secundario" onclick="iniciarFlujoRC()">Daño a un tercero sin vehículo involucrado</button>
-            <p style="font-size:11px; color:#999; margin-top:6px;">Por ejemplo: manipulando mercadería se dañó algo de un tercero. Contá lo que pasó y nosotros vemos por dónde corresponde tramitarlo.</p>
+            <p style="font-size:12px; color:#888; margin:22px 0 8px;">¿Otro tipo de siniestro, sin un vehículo de la flota?</p>
+            <button type="button" class="btn-secundario" onclick="iniciarFlujoRC()">Denuncia de Riesgos Varios</button>
+            <p style="font-size:11px; color:#999; margin-top:6px;">Daños a terceros, robos, hurtos u otros riesgos.</p>
 
             <p style="font-size:11px; color:#bbb; margin-top:18px;">
                 <a href="#" onclick="abrirAmpliarRV(); return false;" style="color:#bbb;">Ampliar una denuncia de Riesgos Varios</a>
@@ -44,13 +49,9 @@
         <!-- Solo administracion: pide clave, que se valida en el servidor -->
         <div id="pantalla-ampliar-rv" class="hidden">
             <h3 style="color:#8a4b00;">Ampliar Riesgos Varios</h3>
-            <p style="font-size:12px; color:#666; margin-bottom:15px;">
-                Estas denuncias se pueden completar después, cuando llegan los datos que faltaban.
-                Requiere clave de administración.
-            </p>
             <input type="password" id="rv_clave" placeholder="Clave" maxlength="40" autocomplete="off">
-            <button onclick="listarRVAmpliables()">Ver denuncias</button>
-            <p id="rv-clave-status" class="dni-status"></p>
+            <button id="btn-ver-rv" onclick="listarRVAmpliables()">Ver denuncias</button>
+            <p id="rv-clave-status" class="status-bajo"></p>
             <div id="rv-lista" style="margin-top:12px;"></div>
             <button class="btn-secundario" onclick="cerrarAmpliarRV()">Volver</button>
         </div>
@@ -86,30 +87,39 @@
 
             <div class="step hidden" id="step-rc-2">
                 <p class="subtitulo-bloque">Qué pasó</p>
-                <textarea id="rc_danos" class="txt-chico" placeholder="Daños ocasionados*" required maxlength="500"></textarea>
+                <textarea id="rc_danos" class="txt-chico" placeholder="Qué se dañó o qué faltó*" required maxlength="500"></textarea>
                 <textarea id="rc_relato" placeholder="Cómo ocurrió, con tus palabras*" required maxlength="1000"></textarea>
 
                 <label>¿Intervino policía o bomberos?*</label>
-                <select id="rc_autoridad">
+                <select id="rc_autoridad" onchange="actualizarPoliciaRV()">
                     <option value="NO">No intervino nadie</option>
                     <option value="POLICIA">Policía</option>
                     <option value="BOMBEROS">Bomberos</option>
                     <option value="AMBOS">Policía y bomberos</option>
                 </select>
+                <div id="rc-bloque-policia" class="hidden">
+                    <label>¿Dónde quedó radicada?* <span class="hint-gris">— si no lo sabés, escribí NO INFORMA</span></label>
+                    <select id="rc_dependencia_tipo">
+                        <option value="COMISARIA">Comisaría</option>
+                        <option value="FISCALIA">Fiscalía</option>
+                    </select>
+                    <input type="text" id="rc_dependencia_nro" placeholder="Número de comisaría o fiscalía*" maxlength="30">
+                </div>
 
-                <p class="subtitulo-bloque">Damnificado (opcional)</p>
-                <p style="font-size:11px; color:#888; margin:-4px 0 8px;">Si tenés los datos de la persona afectada, cargalos. Si no, dejalo vacío.</p>
+                <p class="subtitulo-bloque">Tercero afectado (solo si hay)</p>
+                <p style="font-size:11px; color:#888; margin:-4px 0 8px;">Si se dañó algo de otra persona y tenés sus datos, cargalos. Si no, dejalo vacío.</p>
                 <input type="text" id="rc_terc_nombre" placeholder="Nombre o razón social del damnificado" maxlength="60">
                 <input type="text" id="rc_terc_doc" placeholder="DNI o CUIT" maxlength="13">
                 <input type="text" id="rc_terc_tel" placeholder="Teléfono" maxlength="15">
                 <input type="text" id="rc_terc_dom" placeholder="Domicilio del damnificado" maxlength="80">
                 <input type="text" id="rc_terc_bien" placeholder="Qué se dañó (y dominio si es un vehículo)" maxlength="80">
 
-                <p style="font-size: 13px; margin: 15px 0 10px; color: #333;">Adjuntá fotos del daño.</p>
+                <p style="font-size: 13px; margin: 15px 0 8px; color: #333;">Adjuntá fotos o PDF.</p>
+                <div id="rv-archivos-previos" class="hidden" style="text-align:left; font-size:12px; color:#555; margin-bottom:6px;"></div>
                 <div class="upload-group">
-                    <label>Fotos</label>
+                    <label>Fotos o archivos</label>
                     <div style="display:flex; gap:5px;">
-                        <input type="file" id="rc_fotos" accept="image/*" multiple>
+                        <input type="file" id="rc_fotos" accept="image/*,application/pdf" multiple>
                         <button type="button" onclick="limpiarAdjunto('rc_fotos')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button>
                     </div>
                 </div>
@@ -260,16 +270,14 @@
                     <option value="SI">SÍ</option>
                 </select>
                 <div id="bloque-policia" class="hidden">
-                    <label>¿Dónde quedó radicada?</label>
+                    <label>¿Dónde quedó radicada?* <span class="hint-gris">— si no lo sabés, escribí NO INFORMA</span></label>
                     <select id="dependencia_tipo">
                         <option value="COMISARIA">Comisaría</option>
                         <option value="FISCALIA">Fiscalía</option>
-                        <option value="AMBAS">Comisaría y Fiscalía</option>
                     </select>
-                    <input type="text" id="dependencia_nombre" placeholder="Nombre de la dependencia*" maxlength="60">
-                    <input type="text" id="dependencia_nro" placeholder="Número / Nº de actuación*" maxlength="30">
-                    <p style="font-size:11px; color:#888; margin:-8px 0 8px;">
-                        Si tenés la denuncia policial en PDF, adjuntala en el último paso.
+                    <input type="text" id="dependencia_nro" placeholder="Número de comisaría o fiscalía*" maxlength="30">
+                    <p style="font-size:11px; color:#888; margin:-4px 0 8px; text-align:left;">
+                        Si tenés la denuncia policial, adjuntala en el último paso.
                     </p>
                 </div>
 
@@ -288,12 +296,12 @@
             </div>
 
             <div class="step hidden" id="step-5">
-                <p style="font-size: 13px; margin-bottom: 15px; color: #333;">Adjunte fotos si posee.</p>
-                <div class="upload-group"><label>Daños Propios</label><div id="fotos-viejas-propios" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_propios" accept="image/*" multiple><button type="button" onclick="limpiarAdjunto('f_propios')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
-                <div class="upload-group"><label>Daños Tercero</label><div id="fotos-viejas-tercero" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_tercero" accept="image/*" multiple><button type="button" onclick="limpiarAdjunto('f_tercero')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
-                <div class="upload-group"><label>Registro/Cédula Conductor</label><div id="fotos-viejas-doc_cond" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_doc_cond" accept="image/*" multiple><button type="button" onclick="limpiarAdjunto('f_doc_cond')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
-                <div class="upload-group"><label>Registro/Cédula Tercero</label><div id="fotos-viejas-doc_terc" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_doc_terc" accept="image/*" multiple><button type="button" onclick="limpiarAdjunto('f_doc_terc')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
-                <div class="upload-group"><label>Otras Fotos</label><div id="fotos-viejas-otros" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_otros" accept="image/*" multiple><button type="button" onclick="limpiarAdjunto('f_otros')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
+                <p style="font-size: 13px; margin-bottom: 10px; color: #333;">Adjuntá fotos o PDF si tenés.</p>
+                <div class="upload-group"><label>Daños Propios</label><div id="fotos-viejas-propios" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_propios" accept="image/*,application/pdf" multiple><button type="button" onclick="limpiarAdjunto('f_propios')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
+                <div class="upload-group"><label>Daños Tercero</label><div id="fotos-viejas-tercero" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_tercero" accept="image/*,application/pdf" multiple><button type="button" onclick="limpiarAdjunto('f_tercero')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
+                <div class="upload-group"><label>Registro/Cédula Conductor</label><div id="fotos-viejas-doc_cond" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_doc_cond" accept="image/*,application/pdf" multiple><button type="button" onclick="limpiarAdjunto('f_doc_cond')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
+                <div class="upload-group"><label>Registro/Cédula Tercero</label><div id="fotos-viejas-doc_terc" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_doc_terc" accept="image/*,application/pdf" multiple><button type="button" onclick="limpiarAdjunto('f_doc_terc')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
+                <div class="upload-group"><label>Otras Fotos</label><div id="fotos-viejas-otros" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_otros" accept="image/*,application/pdf" multiple><button type="button" onclick="limpiarAdjunto('f_otros')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
                 <div class="upload-group"><label>Denuncia policial (foto o PDF)</label><div id="fotos-viejas-policial" class="fotos-viejas"></div><div style="display:flex; gap:5px;"><input type="file" id="f_policial" accept="image/*,application/pdf" multiple><button type="button" onclick="limpiarAdjunto('f_policial')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button></div></div>
 
                 <button id="btn-finalizar" onclick="abrirModal()">Finalizar Denuncia</button>
@@ -302,37 +310,50 @@
         </div>
 
         <div id="pantalla-formulario-interno" class="hidden">
-            <h2 id="titulo-paso-int">Paso 1: Datos del hecho</h2>
-            <p id="indicador-paso-int" style="font-weight:bold; color:#28a745; margin-bottom:10px;">Paso 1 de 2</p>
-            <div class="progress-bar"><div id="progress-int" style="width: 50%; background:#28a745;"></div></div>
+            <h2 id="titulo-paso-int">Paso 1: ¿Contra qué fue?</h2>
+            <p id="indicador-paso-int" style="font-weight:bold; color:#28a745; margin-bottom:10px;">Paso 1 de 3</p>
+            <div class="progress-bar"><div id="progress-int" style="width: 33%; background:#28a745;"></div></div>
 
-            <div class="step" id="step-int-1">
-                <input type="text" id="i_lugar" placeholder="Lugar del hecho" required maxlength="80">
-                <div style="display: flex; gap: 10px;">
-                    <input type="date" id="i_fecha" required>
-                    <input type="time" id="i_hora" required>
-                </div>
-                <input type="text" id="i_dni_chofer" placeholder="DNI Conductor" required maxlength="9" inputmode="numeric" autocomplete="off">
-                <p id="i-dni-status" class="dni-status"></p>
-                <input type="text" id="i_nombre_chofer" placeholder="Apellido y Nombre Conductor" required maxlength="50">
-                <input type="text" id="i_tel_chofer" placeholder="Teléfono Conductor" required maxlength="15" inputmode="numeric">
-                <label style="margin-top:8px; display:block;">¿Contra qué fue el daño?</label>
+            <!-- Paso 0: primero se define contra que fue el daño y se valida la
+                 poliza. Si las dos unidades estan en polizas distintas no
+                 corresponde constancia interna, y hay que saberlo ANTES de
+                 que el chofer cargue todo lo demas. -->
+            <div class="step" id="step-int-0">
+                <label>¿Contra qué fue el daño?*</label>
                 <select id="i_tipo_afectado" onchange="actualizarTipoAfectado()">
                     <option value="UNIDAD">Otra unidad de la flota</option>
                     <option value="BIEN">Un bien de la empresa (portón, columna, rampa)</option>
                 </select>
 
                 <div id="bloque-unidad-afectada">
-                    <input type="text" id="i_patente2" placeholder="Dominio de la otra unidad" required maxlength="7">
-                    <p id="i_patente2_status" style="font-size: 11px; margin: -8px 0 8px; min-height: 14px;"></p>
+                    <input type="text" id="i_patente2" placeholder="Dominio de la otra unidad*" required maxlength="7">
+                    <p id="i_patente2_status" class="status-bajo"></p>
                 </div>
 
                 <div id="bloque-bien-afectado" class="hidden">
-                    <input type="text" id="i_bien_afectado" placeholder="Bien afectado de la empresa" maxlength="80">
-                    <p style="font-size:11px; color:#888; margin:-8px 0 8px;">Ejemplos: portón del depósito, columna de la playa, rampa de carga.</p>
+                    <input type="text" id="i_bien_afectado" placeholder="Bien afectado de la empresa*" maxlength="80">
+                    <p style="font-size:11px; color:#888; margin:-4px 0 8px; text-align:left;">Ejemplos: portón del depósito, columna de la playa, rampa de carga.</p>
                 </div>
-                <button onclick="validarYPasarInterno(2)">Siguiente</button>
+
+                <button onclick="validarYPasarInterno(1)">Continuar</button>
+                <button id="btn-pasar-a-tercero" type="button" class="hidden" style="background:#0056b3;"
+                        onclick="iniciarFlujoExterno()">Cargar como Denuncia con Tercero</button>
                 <button class="btn-secundario" onclick="volverASelector()">Volver</button>
+            </div>
+
+            <div class="step hidden" id="step-int-1">
+                <div id="resumen-unidades" class="resumen-unidades"></div>
+                <input type="text" id="i_lugar" placeholder="Lugar del hecho*" required maxlength="80">
+                <div style="display: flex; gap: 10px;">
+                    <input type="date" id="i_fecha" required>
+                    <input type="time" id="i_hora" required>
+                </div>
+                <input type="text" id="i_dni_chofer" placeholder="DNI Conductor*" required maxlength="9" inputmode="numeric" autocomplete="off">
+                <p id="i-dni-status" class="dni-status"></p>
+                <input type="text" id="i_nombre_chofer" placeholder="Apellido y Nombre Conductor*" required maxlength="50">
+                <input type="text" id="i_tel_chofer" placeholder="Teléfono Conductor*" required maxlength="15" inputmode="numeric">
+                <button onclick="validarYPasarInterno(2)">Siguiente</button>
+                <button class="btn-secundario" onclick="cambiarPasoInterno(0)">Volver</button>
             </div>
 
             <div class="step hidden" id="step-int-2">
@@ -345,11 +366,11 @@
                 </select>
                 <input type="text" id="i_presup_monto" placeholder="Monto en $" maxlength="12" inputmode="numeric" class="hidden">
 
-                <p style="font-size: 13px; margin: 15px 0 10px; color: #333;">Adjunte fotos del hecho.</p>
+                <p style="font-size: 13px; margin: 15px 0 8px; color: #333;">Adjuntá fotos o PDF del hecho.</p>
                 <div class="upload-group">
-                    <label>Fotos</label>
+                    <label>Fotos o archivos</label>
                     <div style="display:flex; gap:5px;">
-                        <input type="file" id="i_fotos" accept="image/*" multiple>
+                        <input type="file" id="i_fotos" accept="image/*,application/pdf" multiple>
                         <button type="button" onclick="limpiarAdjunto('i_fotos')" style="width:auto; padding:5px 10px; margin:0; background:#6c757d; font-size:12px; border-radius:4px; color:white; border:none; cursor:pointer;">X</button>
                     </div>
                 </div>
@@ -469,10 +490,9 @@
                     <div><b>Apellido y Nombre:</b> <span id="p-t-c-no"></span></div>
                     <div><b>DNI:</b> <span id="p-t-c-dn"></span></div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 3px;">
-                    <div><b>Teléfono:</b> <span id="p-t-c-tel"></span></div>
-                    <div><b>¿Es el propietario?:</b> <span id="p-t-es-prop"></span></div>
-                </div>
+                <!-- Sin "¿Es el propietario?": si lo es, el bloque Propietario
+                     de arriba ya muestra el mismo nombre. -->
+                <div style="margin-bottom: 3px;"><b>Teléfono:</b> <span id="p-t-c-tel"></span></div>
 
                 <div style="font-weight:bold; font-size:9pt; margin:8px 0 3px; color:#333;">Seguro</div>
                 <div style="display: grid; grid-template-columns: 1.5fr 1fr; margin-bottom: 8px;">
@@ -565,7 +585,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
                     <div style="text-align: left;">
                         <h1 style="margin: 0; font-size: 16pt; font-weight: bold; letter-spacing: 1px;">DENUNCIA DE RIESGOS VARIOS</h1>
-                        <p style="margin: 4px 0 0; font-size: 10pt;">Daño a un tercero sin intervención de vehículo</p>
+                        <p style="margin: 4px 0 0; font-size: 10pt;">Siniestro sin intervención de vehículos de la flota</p>
                     </div>
                     <img src="grupo_barsat_logistico_logo.png" style="height: 46px; width: auto; display: block;">
                 </div>
@@ -613,6 +633,6 @@
             </div>
         </div>
     </div>
-    <script src="app.js?v=21"></script>
+    <script src="app.js?v=22"></script>
 </body>
 </html>

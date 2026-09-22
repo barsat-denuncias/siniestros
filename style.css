@@ -86,13 +86,67 @@ label {
     margin-top: 15px;
 }
 
+/* Adjuntos: mas compactos. Antes cada grupo tenia 15px de padding y 15 de
+   margen y el paso 5 se hacia larguisimo en el celular. */
 .upload-group {
     background: #f8f9fa;
-    padding: 15px;
+    padding: 8px 10px;
     border: 1px dashed #bbb;
     border-radius: 8px;
-    margin-bottom: 15px;
+    margin-bottom: 8px;
     text-align: left;
+}
+.upload-group label { margin-top: 0; font-size: 12px; }
+.upload-group input[type="file"] { margin: 4px 0; padding: 6px; font-size: 13px; }
+
+/* Ficha para un PDF ya subido (no tiene miniatura) */
+.foto-vieja-pdf {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    background: #fdecea; color: #b02a37;
+    font-weight: bold; font-size: 14px;
+}
+
+/* Aclaracion gris al lado de una etiqueta */
+.hint-gris { font-weight: normal; color: #999; font-size: 11px; }
+
+/* ===== Pantalla de exito ===== */
+#pantalla-exito { padding: 10px 0; }
+#pantalla-exito .exito-icono {
+    width: 64px; height: 64px; margin: 0 auto 12px;
+    border-radius: 50%; background: #d1e7dd; color: #0f5132;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; font-weight: bold;
+}
+#pantalla-exito h2 { margin: 0 0 6px; color: #0f5132; }
+#pantalla-exito .exito-nro { font-size: 15px; color: #444; margin-bottom: 20px; }
+.btn-descarga {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    background: #0f5132;
+}
+.btn-descarga:hover { background: #0b3d26; }
+.btn-descarga svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+/* Lista de denuncias de Riesgos Varios para ampliar: compacta */
+.sin-card.compacta {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; margin-bottom: 6px; font-size: 12px; line-height: 1.35;
+}
+.sin-card.compacta .sin-info { flex: 1; }
+.sin-card.compacta .btn-ampliar {
+    width: auto; margin: 0; padding: 7px 14px; font-size: 13px; flex-shrink: 0;
+}
+
+/* Status que va DEBAJO de un boton (no se monta encima como dni-status) */
+.status-bajo { font-size: 12px; margin: 8px 0 4px; min-height: 16px; text-align: left; }
+.status-bajo.ok { color: #0f5132; font-weight: bold; }
+.status-bajo.aviso { color: #9c5700; }
+.status-bajo.buscando { color: #666; font-style: italic; }
+
+/* Resumen de las dos unidades en el interno */
+.resumen-unidades {
+    text-align: left; font-size: 13px; background: #f4fbf6;
+    border: 1px solid #c3e6cb; border-radius: 6px; padding: 8px 10px; margin: 8px 0 4px;
 }
 
 .error {
@@ -143,14 +197,23 @@ textarea.txt-chico {
     border: 1px solid #f0d8d8;
     border-left: 3px solid #d9534f;
     border-radius: 6px;
-    padding: 12px;
-    margin-bottom: 12px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+/* Campos en dos columnas y mas bajos: antes eran 8 campos a lo alto y la
+   ficha de un solo lesionado ocupaba media pantalla. */
+.lesionado-card .les-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px;
+}
+.lesionado-card .les-grid .les-ancho { grid-column: 1 / -1; }
+.lesionado-card input, .lesionado-card select {
+    padding: 7px 8px; margin: 3px 0; font-size: 13px;
 }
 .lesionado-card .lesionado-titulo {
     font-size: 12px;
     font-weight: bold;
     color: #9c0006;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     display: flex;
     justify-content: space-between;
     align-items: center;

@@ -40,7 +40,15 @@ let croquisUrlPrevio = null;
 // avanzar de paso hasta que termine: si no, se puede enviar una ampliacion con
 // el croquis vacio sin darse cuenta.
 let croquisPrevioPendiente = false;
+// Promesa con la descarga del croquis anterior, lanzada apenas se elige ampliar
+let croquisPrevioDescarga = null;
 const CROQUIS_SIZE = 500;
+
+async function descargarCroquis(url) {
+    const res = await fetch(url, { cache: 'force-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.blob();
+}
 
 const localidadesData = {
     "CABA": ["Almagro", "Balvanera", "Belgrano", "Caballito", "Flores", "Palermo", "Recoleta", "Retiro", "San Telmo", "Villa Urquiza"],
@@ -186,6 +194,19 @@ function extensionDe(blob) {
     return 'jpg';
 }
 
+// Riesgos Varios: si intervino la policia (sola o con bomberos), pedir donde
+function actualizarPoliciaRV() {
+    const v = (document.getElementById('rc_autoridad') || {}).value || 'NO';
+    const hay = v === 'POLICIA' || v === 'AMBOS';
+    const box = document.getElementById('rc-bloque-policia');
+    if (box) box.classList.toggle('hidden', !hay);
+    const nro = document.getElementById('rc_dependencia_nro');
+    if (nro) {
+        nro.required = hay;
+        if (!hay) { nro.value = ''; nro.style.borderColor = '#ddd'; }
+    }
+}
+
 // Muestra los datos de la dependencia solo si intervino la policia
 function actualizarPolicia() {
     const sel = document.getElementById('intervino_policia');
@@ -193,7 +214,7 @@ function actualizarPolicia() {
     if (!sel || !box) return;
     const hay = sel.value === 'SI';
     box.classList.toggle('hidden', !hay);
-    ['dependencia_nombre', 'dependencia_nro'].forEach(id => {
+    ['dependencia_nro'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.required = hay;
@@ -337,27 +358,28 @@ function reiniciarEnvio() { envioEnCurso = null; }
 // ============================================================================
 let pdfParaDescargar = null;
 
-function ofrecerDescargaPDF(blob, nombre) {
-    pdfParaDescargar = { blob, nombre };
-    const cont = document.getElementById('descarga-pdf');
-    if (!cont) return;
-    const btn = document.getElementById('btn-descargar-pdf');
-    if (btn) btn.innerText = `Descargar ${nombre}`;
-    cont.classList.remove('hidden');
-}
+// Pantalla final, aislada: se ocultan TODAS las demas pantallas (antes quedaba
+// el formulario abajo, con "Enviando..." y los datos cargados a la vista).
+// No se recarga sola porque se perderia el PDF para descargar.
+const TODAS_LAS_PANTALLAS = [
+    'pantalla-validacion', 'pantalla-seleccion', 'pantalla-tipo-siniestro',
+    'pantalla-formulario', 'pantalla-formulario-interno', 'pantalla-formulario-rc',
+    'pantalla-ampliar-rv'
+];
 
-// Al terminar no se recarga sola la pagina (se perderia el PDF descargable).
-// Se muestra un boton para volver al inicio cuando el chofer ya lo bajo.
-function mostrarVolverAlInicio() {
-    const cont = document.getElementById('descarga-pdf');
-    if (!cont || document.getElementById('btn-volver-inicio')) return;
-    const b = document.createElement('button');
-    b.id = 'btn-volver-inicio';
-    b.type = 'button';
-    b.className = 'btn-secundario';
-    b.innerText = 'Cargar otra denuncia';
-    b.onclick = () => location.reload();
-    cont.appendChild(b);
+function mostrarPantallaExito(titulo, nro, blob, nombreArchivo) {
+    pdfParaDescargar = blob ? { blob, nombre: nombreArchivo || 'Denuncia.pdf' } : null;
+    TODAS_LAS_PANTALLAS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+    limpiarStatus();
+    document.getElementById('exito-titulo').textContent = titulo;
+    document.getElementById('exito-nro').textContent = nro ? `Denuncia Nº ${nro}` : '';
+    const btn = document.getElementById('btn-descargar-pdf');
+    if (btn) btn.classList.toggle('hidden', !pdfParaDescargar);
+    document.getElementById('pantalla-exito').classList.remove('hidden');
+    window.scrollTo(0, 0);
 }
 
 function descargarPDFGenerado() {
@@ -752,6 +774,7 @@ function initAutocompletadoChofer() {
 let ultimoDniInterno = '';
 let timerDniInterno = null;
 let choferInterno = null;   // datos del padron para ESTE formulario, no el externo
+let seqDniInterno = 0;
 
 function statusDniInterno(msg, tipo) {
     const el = document.getElementById('i-dni-status');
@@ -768,26 +791,31 @@ async function buscarChoferInterno() {
     if (dni === ultimoDniInterno) return;
     ultimoDniInterno = dni;
 
-    // Vacia lo que habiamos completado del DNI anterior
+    // Vacia lo que habiamos completado del DNI anterior y vuelve a mostrar los
+    // campos. Nombre y telefono se ocultan SOLO si se completaron del padron:
+    // antes el conductor aparecia en el cartel verde y ademas se le volvia a
+    // pedir el nombre.
     const limpiarInternos = () => {
         choferInterno = null;
         ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => {
             const el = document.getElementById(id);
-            if (el && el.classList.contains('autocompletado')) {
+            if (!el) return;
+            if (el.classList.contains('autocompletado')) {
                 el.value = '';
                 el.classList.remove('autocompletado');
             }
+            el.classList.remove('hidden');
         });
     };
 
-    if (dni.length < 7) { statusDniInterno(''); limpiarInternos(); return; }
+    limpiarInternos();
+    if (dni.length < 7) { statusDniInterno(''); return; }
 
     statusDniInterno('Buscando conductor...', 'buscando');
+    const miTurno = ++seqDniInterno;
     try {
         const data = await rpc('buscar_chofer', { p_dni: dni });
-        if (document.getElementById('i_dni_chofer').value.replace(/\D/g, '') !== dni) return;
-
-        limpiarInternos();
+        if (miTurno !== seqDniInterno) return;
 
         if (!data || !data.encontrado) {
             statusDniInterno('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
@@ -800,11 +828,17 @@ async function buscarChoferInterno() {
         choferInterno = c;
         rellenarCampoChofer('i_nombre_chofer', c.nombre_completo);
         rellenarCampoChofer('i_tel_chofer',    c.telefono);
+        ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && el.classList.contains('autocompletado') && el.value.trim()) el.classList.add('hidden');
+        });
 
         let msg = c.nombre_completo || 'Conductor encontrado';
         if (c.op) msg += ' — ' + c.op + (c.legajo ? ' (leg. ' + c.legajo + ')' : '');
+        if (!c.telefono) msg += '. Falta el teléfono.';
         statusDniInterno(msg, 'ok');
     } catch (err) {
+        if (miTurno !== seqDniInterno) return;
         limpiarInternos();
         statusDniInterno('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
         console.warn('buscar_chofer (interno) fallo:', err.message);
@@ -1022,6 +1056,7 @@ function resetearCroquis() {
     croquisHistorial = [];
     croquisUrlPrevio = null;
     croquisPrevioPendiente = false;
+    croquisPrevioDescarga = null;
 }
 
 // Carga la imagen del croquis previo sobre el canvas actual. Hacemos fetch como
@@ -1046,9 +1081,12 @@ async function cargarCroquisPrevio(url) {
     };
 
     try {
-        const res = await fetch(url);
-        if (!res.ok) { fallo('HTTP ' + res.status); return; }
-        const blob = await res.blob();
+        // Si ya se empezo a bajar al elegir "Ampliar", se reusa esa descarga.
+        // Antes arrancaba recien al llegar al paso 3 y por eso tardaba.
+        const blob = croquisPrevioDescarga
+            ? await croquisPrevioDescarga
+            : await descargarCroquis(url);
+        if (!blob) { fallo('descarga vacia'); return; }
         const objectUrl = URL.createObjectURL(blob);
         const img = new Image();
         img.onload = () => {
@@ -1142,7 +1180,9 @@ function actualizarTipoAfectado() {
     if (inpBien) { inpBien.required =  esBien; if (!esBien) inpBien.value = ''; }
 
     const st = document.getElementById('i_patente2_status');
-    if (st) { st.innerText = ''; st.style.color = ''; }
+    if (st) { st.innerText = ''; st.className = 'status-bajo'; }
+    const btnT = document.getElementById('btn-pasar-a-tercero');
+    if (btnT) btnT.classList.add('hidden');
     unidad2 = {};
 }
 
@@ -1326,6 +1366,13 @@ function iniciarFlujoExterno() {
     const boxProp = document.getElementById('datos_propietario');
     if (boxProp) boxProp.classList.add('hidden');
 
+    // Intervencion policial
+    const selPol = document.getElementById('intervino_policia');
+    if (selPol) selPol.value = 'NO';
+    const depNro = document.getElementById('dependencia_nro');
+    if (depNro) depNro.value = '';
+    actualizarPolicia();
+
     // Archivos elegidos en el paso 5
     CATEGORIAS_FOTO.forEach(c => {
         const f = document.getElementById(`f_${c}`);
@@ -1343,8 +1390,6 @@ function iniciarFlujoExterno() {
 
     // Por si venia de un envio anterior
     congelarFormulario('pantalla-formulario', false);
-    const boxDesc = document.getElementById('descarga-pdf');
-    if (boxDesc) boxDesc.classList.add('hidden');
     document.getElementById('pantalla-tipo-siniestro').classList.add('hidden');
     document.getElementById('pantalla-formulario-interno').classList.add('hidden');
     document.getElementById('pantalla-formulario').classList.remove('hidden');
@@ -1376,7 +1421,24 @@ function iniciarFlujoInterno() {
     ultimoDniInterno = '';
     choferInterno = null;
     statusDniInterno('');
-    cambiarPasoInterno(1);
+    reiniciarEnvio();
+    // Reset completo de los campos del interno
+    ['i_patente2', 'i_bien_afectado', 'i_lugar', 'i_fecha', 'i_hora', 'i_dni_chofer',
+     'i_nombre_chofer', 'i_tel_chofer', 'i_relato', 'i_presup_monto', 'i_fotos'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = '';
+        el.style.borderColor = '#ddd';
+        el.classList.remove('autocompletado');
+    });
+    ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('hidden');
+    });
+    const btnT = document.getElementById('btn-pasar-a-tercero');
+    if (btnT) btnT.classList.add('hidden');
+    congelarFormulario('pantalla-formulario-interno', false);
+    cambiarPasoInterno(0);
 }
 
 // Borra los previews de fotos viejas en cada upload-group del step 5.
@@ -1411,11 +1473,27 @@ function renderFotosViejas() {
         const div = document.createElement('div');
         div.className = 'foto-vieja';
         div.title = f.label || f.name;
-        div.innerHTML = `
-            <img src="${f.url}" alt="">
-            <button type="button" class="quitar-foto" data-name="${encodeURIComponent(f.name)}" title="Quitar foto">×</button>
-        `;
-        div.querySelector('.quitar-foto').addEventListener('click', () => quitarFotoVieja(f.name));
+        // Los PDF adjuntos (denuncia policial) no tienen miniatura: se muestran
+        // como una ficha "PDF". Antes se intentaba dibujar como <img> y quedaba
+        // un recuadro en blanco.
+        if (/\.pdf$/i.test(f.name || '')) {
+            const tag = document.createElement('div');
+            tag.className = 'foto-vieja-pdf';
+            tag.textContent = 'PDF';
+            div.appendChild(tag);
+        } else {
+            const img = document.createElement('img');
+            img.src = f.url;
+            img.alt = '';
+            div.appendChild(img);
+        }
+        const btnQ = document.createElement('button');
+        btnQ.type = 'button';
+        btnQ.className = 'quitar-foto';
+        btnQ.title = 'Quitar archivo';
+        btnQ.textContent = '×';
+        btnQ.addEventListener('click', () => quitarFotoVieja(f.name));
+        div.appendChild(btnQ);
         cont.appendChild(div);
     });
 }
@@ -1497,6 +1575,9 @@ async function iniciarAmpliacion(idx) {
     // Guardamos la URL del croquis previo para que iniciarCroquis (cuando el
     // usuario llegue al paso 3) lo pinte sobre el canvas.
     croquisUrlPrevio = s.croquis_url || null;
+    // Se empieza a bajar YA, mientras el chofer revisa los pasos 1 y 2
+    croquisPrevioDescarga = croquisUrlPrevio ? descargarCroquis(croquisUrlPrevio) : null;
+    if (croquisPrevioDescarga) croquisPrevioDescarga.catch(() => {});   // el error se maneja al dibujar
     precargarFormulario(s);
     actualizarBannerAmpliacion();
 
@@ -1594,19 +1675,21 @@ function agregarLesionado(datos) {
             <span>Lesionado ${n}</span>
             <button type="button" class="quitar-lesionado">Quitar</button>
         </div>
-        <input type="text" data-campo="apellido"  placeholder="Apellido*"          maxlength="40" value="${esc(d.apellido)}">
-        <input type="text" data-campo="nombre"    placeholder="Nombre*"            maxlength="40" value="${esc(d.nombre)}">
-        <input type="text" data-campo="dni"       placeholder="DNI*"               maxlength="10" inputmode="numeric" value="${esc(d.dni)}">
-        <select data-campo="genero">
-            <option value="">Género*</option>
-            <option value="MASCULINO">Masculino</option>
-            <option value="FEMENINO">Femenino</option>
-            <option value="OTRO">Otro</option>
-        </select>
-        <input type="text" data-campo="domicilio" placeholder="Domicilio*"         maxlength="80" value="${esc(d.domicilio)}">
-        <input type="text" data-campo="telefono"  placeholder="Teléfono*"          maxlength="15" value="${esc(d.telefono)}">
-        <input type="text" data-campo="lesion"    placeholder="Tipo de lesión*"    maxlength="80" value="${esc(d.lesion)}">
-        <input type="text" data-campo="hospital"  placeholder="Hospital donde se atendió*" maxlength="80" value="${esc(d.hospital)}">
+        <div class="les-grid">
+            <input type="text" data-campo="apellido"  placeholder="Apellido*"  maxlength="40" value="${esc(d.apellido)}">
+            <input type="text" data-campo="nombre"    placeholder="Nombre*"    maxlength="40" value="${esc(d.nombre)}">
+            <input type="text" data-campo="dni"       placeholder="DNI*"       maxlength="10" inputmode="numeric" value="${esc(d.dni)}">
+            <select data-campo="genero">
+                <option value="">Género*</option>
+                <option value="MASCULINO">Masculino</option>
+                <option value="FEMENINO">Femenino</option>
+                <option value="OTRO">Otro</option>
+            </select>
+            <input type="text" data-campo="domicilio" placeholder="Domicilio*" maxlength="80" value="${esc(d.domicilio)}" class="les-ancho">
+            <input type="text" data-campo="telefono"  placeholder="Teléfono*"  maxlength="15" value="${esc(d.telefono)}">
+            <input type="text" data-campo="lesion"    placeholder="Tipo de lesión*" maxlength="80" value="${esc(d.lesion)}">
+            <input type="text" data-campo="hospital"  placeholder="Hospital donde se atendió*" maxlength="80" value="${esc(d.hospital)}" class="les-ancho">
+        </div>
     `;
     if (d.genero) {
         const sg = card.querySelector('[data-campo="genero"]');
@@ -1657,14 +1740,17 @@ function validarLesionados() {
     if (!sel || sel.value !== 'SI') return true;
     const cards = document.querySelectorAll('#lista-lesionados .lesionado-card');
     if (cards.length === 0) return true;
-    let ok = true;
+    let primero = null;
     cards.forEach(card => {
         card.querySelectorAll('[data-campo]').forEach(inp => {
-            if (!inp.value.trim()) { inp.style.borderColor = 'red'; ok = false; }
-            else { inp.style.borderColor = '#ddd'; }
+            if (!inp.value.trim()) {
+                inp.style.borderColor = 'red';
+                if (!primero) primero = inp;
+            } else { inp.style.borderColor = '#ddd'; }
         });
     });
-    return ok;
+    if (primero) { irAlCampo(primero); return false; }
+    return true;
 }
 
 // Setea es_propietario a partir del valor GUARDADO. Antes se deducia de si
@@ -1747,6 +1833,15 @@ function precargarFormulario(s) {
     setVal2('prop_dni', s.prop_dni);
     setVal2('prop_tel', s.prop_tel);
 
+    // Intervencion policial
+    const selPol = document.getElementById('intervino_policia');
+    if (selPol) selPol.value = (s.intervino_policia === 'SI') ? 'SI' : 'NO';
+    actualizarPolicia();
+    if (s.intervino_policia === 'SI') {
+        setVal2('dependencia_tipo', s.dependencia_tipo === 'FISCALIA' ? 'FISCALIA' : 'COMISARIA');
+        setVal2('dependencia_nro', s.dependencia_nro);
+    }
+
     // Lesionados: reconstruimos las fichas desde el jsonb guardado
     const selLes = document.getElementById('hubo_lesionados');
     const listaLes = document.getElementById('lista-lesionados');
@@ -1771,36 +1866,74 @@ function cambiarPaso(paso) {
     window.scrollTo(0,0);
 }
 
-function validarYPasar(proximoPaso) {
-    const inputs = document.getElementById(`step-${proximoPaso - 1}`).querySelectorAll('[required]');
-    let valido = true;
-    inputs.forEach(i => {
-        if(!i.checkValidity()){ i.style.borderColor = "red"; valido = false; }
-        else { i.style.borderColor = "#ddd"; }
+// ============================================================================
+// VALIDACION CON SCROLL AL ERROR
+// Antes el campo se ponia en rojo pero quedaba arriba, fuera de la vista, y
+// el chofer no entendia por que no avanzaba. Ahora la pantalla baja (o sube)
+// hasta el primer campo que falta y lo deja seleccionado.
+// ============================================================================
+function irAlCampo(el) {
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => { try { el.focus({ preventScroll: true }); } catch {} }, 350);
+    // Cuando lo corrige, se le saca el rojo
+    const limpiar = () => { el.style.borderColor = '#ddd'; };
+    el.addEventListener('input', limpiar, { once: true });
+    el.addEventListener('change', limpiar, { once: true });
+}
+
+// Valida todos los [required] VISIBLES de un contenedor. Un campo con solo
+// espacios no cuenta como completo. Devuelve true si esta todo bien; si no,
+// marca en rojo y lleva al primero que falta.
+function validarContenedor(cont) {
+    if (!cont) return true;
+    let primero = null;
+    cont.querySelectorAll('[required]').forEach(i => {
+        if (i.offsetParent === null) return;      // oculto: no aplica
+        const vacio = !String(i.value || '').trim();
+        if (vacio || !i.checkValidity()) {
+            i.style.borderColor = 'red';
+            if (!primero) primero = i;
+        } else {
+            i.style.borderColor = '#ddd';
+        }
     });
+    if (primero) { irAlCampo(primero); return false; }
+    return true;
+}
+
+function validarYPasar(proximoPaso) {
+    if (!validarContenedor(document.getElementById(`step-${proximoPaso - 1}`))) return;
 
     // Validacion extra al salir del paso 3: el croquis es obligatorio
     if (proximoPaso === 4) {
+        const msg = document.getElementById('croquis-error');
         if (croquisPrevioPendiente) {
-            showStatus("Esperá a que termine de cargar el croquis de la denuncia original.", "error");
-            valido = false;
-        } else if (!croquisFueUsado) {
-            const msg = document.getElementById('croquis-error');
+            // Mensaje junto al croquis, no arriba: antes quedaba pegado en el
+            // cartel global aunque el croquis ya hubiera terminado de cargar.
+            if (msg) {
+                msg.style.display = 'block';
+                msg.style.color = '#666';
+                msg.innerText = 'Esperá: todavía se está cargando el croquis de la denuncia original.';
+            }
+            irAlCampo(document.getElementById('croquis-canvas'));
+            return;
+        }
+        if (!croquisFueUsado) {
             if (msg) {
                 msg.style.display = 'block';
                 msg.style.color = '#d9534f';
                 msg.innerText = 'Es obligatorio dibujar el croquis del siniestro.';
             }
-            valido = false;
+            irAlCampo(document.getElementById('croquis-canvas'));
+            return;
         }
     }
 
     // Al salir del paso 4: los lesionados cargados tienen que estar completos
-    if (proximoPaso === 5 && !validarLesionados()) {
-        valido = false;
-    }
+    if (proximoPaso === 5 && !validarLesionados()) return;
 
-    if(valido) cambiarPaso(proximoPaso);
+    cambiarPaso(proximoPaso);
 }
 
 // ============================================================================
@@ -1867,7 +2000,6 @@ async function enviarSiniestro() {
             lesionados: leerLesionados(),
             intervino_policia: val('intervino_policia'),
             dependencia_tipo:   val('intervino_policia') === 'SI' ? val('dependencia_tipo')   : '',
-            dependencia_nombre: val('intervino_policia') === 'SI' ? val('dependencia_nombre') : '',
             dependencia_nro:    val('intervino_policia') === 'SI' ? val('dependencia_nro')    : '',
             provincia: val('provincia'),
             localidad: localidadFinal,
@@ -1962,7 +2094,7 @@ async function enviarSiniestro() {
                 for (let i = 0; i < f.length; i++) {
                     const blob = await comprimirImagen(f[i]);
                     const path = `${folder}/${c}_${i}_${tokenArchivo()}.${extensionDe(blob)}`;
-                    btn.innerText = "Subiendo fotos...";
+                    btn.innerText = "Subiendo archivos...";
                     const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
                         method: 'POST',
                         headers: sbHeaders({ 'Content-Type': blob.type || 'image/jpeg' }),
@@ -2048,7 +2180,6 @@ async function enviarSiniestro() {
         setVal('p-t-c-no',    val('nombre_cond_tercero'));
         setVal('p-t-c-dn',    val('dni_cond_tercero'));
         setVal('p-t-c-tel',   val('tel_cond_tercero'));
-        setVal('p-t-es-prop', esProp ? 'SI' : 'NO');
         // Si el conductor es el propietario, se repiten sus datos; si no, van
         // los del propietario que se cargaron aparte.
         setVal('p-t-p-no', esProp ? val('nombre_cond_tercero') : val('prop_nombre'));
@@ -2064,12 +2195,7 @@ async function enviarSiniestro() {
             if (val('intervino_policia') === 'SI') {
                 const tipos = { COMISARIA: 'Comisaría', FISCALIA: 'Fiscalía', AMBAS: 'Comisaría y Fiscalía' };
                 const t = tipos[val('dependencia_tipo')] || val('dependencia_tipo');
-                contPol.innerHTML = `
-                    <div style="display:grid; grid-template-columns:1fr 1.4fr 1fr;">
-                      <div><b>Intervino:</b> SÍ</div>
-                      <div><b>Dependencia:</b> ${t} ${val('dependencia_nombre')}</div>
-                      <div><b>Nº actuación:</b> ${val('dependencia_nro')}</div>
-                    </div>`;
+                contPol.textContent = `Intervino la policía. ${t} Nº ${val('dependencia_nro') || 'NO INFORMA'}.`;
             } else {
                 contPol.innerHTML = '<span>No intervino la policía.</span>';
             }
@@ -2218,14 +2344,10 @@ async function enviarSiniestro() {
         });
 
         reiniciarEnvio();
-        ofrecerDescargaPDF(pdfBlob, `Denuncia_${nroSiniestroFinal}_${unidad.DOMINIO}.pdf`);
-        const msgFinal = esAmpliacion
-            ? `¡ÉXITO! Denuncia ${nroSiniestroFinal} ampliada correctamente.`
-            : `¡ÉXITO! Denuncia cargada: ${nroSiniestroFinal}`;
-        showStatus(msgFinal, "success");
-        // No se recarga sola: si lo hiciera, se perderia el PDF descargable.
-        // El chofer recarga cuando termina, con el boton de abajo.
-        mostrarVolverAlInicio();
+        mostrarPantallaExito(
+            esAmpliacion ? 'Denuncia ampliada' : 'Denuncia cargada',
+            nroSiniestroFinal, pdfBlob,
+            `Denuncia ${nroSiniestroFinal} ${unidad.DOMINIO}.pdf`);
     } catch (e) {
         congelarFormulario('pantalla-formulario', false);
         // Si la denuncia ya se creo, hay que decirlo: el chofer tiene que saber
@@ -2249,50 +2371,70 @@ async function enviarSiniestro() {
 // Datos del segundo vehiculo (validado contra la flota antes de pasar al paso 2)
 let unidad2 = null;
 
+// Tres pasos: 0 = contra que fue (se valida la poliza), 1 = datos del hecho y
+// conductor, 2 = relato, presupuesto y fotos.
+const TITULOS_INTERNO = [
+    "Paso 1: ¿Contra qué fue?",
+    "Paso 2: Datos del hecho",
+    "Paso 3: Relato, presupuesto y fotos"
+];
+
 function cambiarPasoInterno(paso) {
     document.querySelectorAll('#pantalla-formulario-interno .step').forEach(s => s.classList.add('hidden'));
     document.getElementById(`step-int-${paso}`).classList.remove('hidden');
-    document.getElementById('progress-int').style.width = (paso * 50) + "%";
-    document.getElementById('titulo-paso-int').innerText = paso === 1
-        ? "Paso 1: Datos del hecho"
-        : "Paso 2: Relato, presupuesto y fotos";
-    document.getElementById('indicador-paso-int').innerText = `Paso ${paso} de 2`;
+    document.getElementById('progress-int').style.width = Math.round(((paso + 1) / 3) * 100) + "%";
+    document.getElementById('titulo-paso-int').innerText = TITULOS_INTERNO[paso] || '';
+    document.getElementById('indicador-paso-int').innerText = `Paso ${paso + 1} de 3`;
     window.scrollTo(0, 0);
 }
 
-async function validarYPasarInterno(proximoPaso) {
-    if (proximoPaso === 2) {
-        // Validacion estandar del paso 1
-        const inputs = document.getElementById('step-int-1').querySelectorAll('[required]');
-        let valido = true;
-        inputs.forEach(i => {
-            if (!i.checkValidity()) { i.style.borderColor = "red"; valido = false; }
-            else { i.style.borderColor = "#ddd"; }
-        });
-        if (!valido) return;
+// Resumen fijo arriba del paso 2: quien embiste y que se daño.
+function pintarResumenUnidades() {
+    const box = document.getElementById('resumen-unidades');
+    if (!box) return;
+    const esBien = (document.getElementById('i_tipo_afectado') || {}).value === 'BIEN';
+    box.replaceChildren();
+    const l1 = document.createElement('div');
+    l1.innerHTML = '<b>Embestidor:</b> ';
+    l1.appendChild(document.createTextNode(unidad.DOMINIO || ''));
+    const l2 = document.createElement('div');
+    l2.innerHTML = esBien ? '<b>Bien afectado:</b> ' : '<b>Embestido:</b> ';
+    l2.appendChild(document.createTextNode(esBien
+        ? (document.getElementById('i_bien_afectado').value || '')
+        : `${unidad2.DOMINIO || ''} ${unidad2.MODELO ? '— ' + unidad2.MODELO : ''}`));
+    box.appendChild(l1);
+    box.appendChild(l2);
+}
 
-        // Si el daño fue contra un bien de la empresa no hay segundo dominio
+async function validarYPasarInterno(proximoPaso) {
+    // ---- Paso 0 -> 1: contra que fue ----
+    if (proximoPaso === 1) {
+        const btnTercero = document.getElementById('btn-pasar-a-tercero');
+        if (btnTercero) btnTercero.classList.add('hidden');
+
         const tipoAfect = (document.getElementById('i_tipo_afectado') || {}).value || 'UNIDAD';
         if (tipoAfect === 'BIEN') {
             const inpBien = document.getElementById('i_bien_afectado');
             if (!inpBien || !inpBien.value.trim()) {
-                if (inpBien) inpBien.style.borderColor = "red";
+                if (inpBien) { inpBien.style.borderColor = "red"; irAlCampo(inpBien); }
                 return;
             }
             inpBien.style.borderColor = "#ddd";
             unidad2 = {};
-            cambiarPasoInterno(2);
+            pintarResumenUnidades();
+            cambiarPasoInterno(1);
             return;
         }
 
         // Contra otra unidad: tiene que estar en la flota Y bajo la MISMA POLIZA.
         // Si son polizas distintas hay reclamo entre companias y corresponde
         // denuncia con tercero, no constancia interna.
-        const dom2 = document.getElementById('i_patente2').value.trim().toUpperCase();
-        const status = document.getElementById('i_patente2_status');
         const inputP2 = document.getElementById('i_patente2');
+        const dom2 = inputP2.value.trim().toUpperCase();
+        const status = document.getElementById('i_patente2_status');
+        if (!dom2) { inputP2.style.borderColor = "red"; irAlCampo(inputP2); return; }
 
-        status.style.color = "#555";
+        status.className = 'status-bajo buscando';
         status.innerText = "Validando dominio...";
         try {
             const chequeo = await rpc('validar_unidad_interna', {
@@ -2300,21 +2442,25 @@ async function validarYPasarInterno(proximoPaso) {
                 p_dominio2: dom2
             });
 
-            if (!chequeo || !chequeo.ok) {
-                inputP2.style.borderColor = "red";
-                status.style.color = "#d9534f";
-                status.innerText = (chequeo && chequeo.mensaje)
-                    ? chequeo.mensaje
-                    : `Dominio ${dom2} no figura en la flota.`;
+            // El dominio pudo haber cambiado mientras se validaba
+            if (inputP2.value.trim().toUpperCase() !== dom2) {
+                status.className = 'status-bajo aviso';
+                status.innerText = "El dominio cambió mientras se validaba. Probá de nuevo.";
                 return;
             }
 
-            // El dominio pudo haber cambiado mientras se validaba: si no
-            // coincide con lo que hay en el campo, no se avanza.
-            const domAhora = document.getElementById('i_patente2').value.trim().toUpperCase();
-            if (domAhora !== dom2) {
-                status.style.color = "#d9534f";
-                status.innerText = "El dominio cambió mientras se validaba. Probá de nuevo.";
+            if (!chequeo || !chequeo.ok) {
+                inputP2.style.borderColor = "red";
+                status.className = 'status-bajo aviso';
+                status.innerText = (chequeo && chequeo.mensaje)
+                    ? chequeo.mensaje
+                    : `Dominio ${dom2} no figura en la flota.`;
+                // Polizas distintas: ofrecer pasar directo a la denuncia con tercero
+                if (chequeo && (chequeo.motivo === 'OTRA_POLIZA' || chequeo.motivo === 'SIN_POLIZA')) {
+                    status.innerText = 'Las unidades están en pólizas distintas: no corresponde '
+                        + 'constancia interna. Cargala como denuncia con tercero.';
+                    if (btnTercero) btnTercero.classList.remove('hidden');
+                }
                 return;
             }
 
@@ -2325,13 +2471,20 @@ async function validarYPasarInterno(proximoPaso) {
                 RAZON_SOCIAL: chequeo.razon_social,
                 POLIZA: chequeo.poliza
             };
-            status.style.color = "#28a745";
+            status.className = 'status-bajo ok';
             status.innerText = `✓ ${chequeo.modelo || ''} — misma póliza (${chequeo.poliza})`;
+            pintarResumenUnidades();
+            cambiarPasoInterno(1);
         } catch (err) {
-            status.style.color = "#d9534f";
+            status.className = 'status-bajo aviso';
             status.innerText = "Error al validar: " + err.message;
-            return;
         }
+        return;
+    }
+
+    // ---- Paso 1 -> 2: datos del hecho y conductor ----
+    if (proximoPaso === 2) {
+        if (!validarContenedor(document.getElementById('step-int-1'))) return;
     }
     cambiarPasoInterno(proximoPaso);
 }
@@ -2353,16 +2506,7 @@ function abrirModalInterno() {
 // Chequea los obligatorios del ultimo paso del interno. Ademas de checkValidity
 // se exige contenido real: un campo con solo espacios no cuenta como completo.
 function validarPasoInterno2() {
-    const paso = document.getElementById('step-int-2');
-    if (!paso) return true;
-    let ok = true;
-    paso.querySelectorAll('[required]').forEach(i => {
-        const vacio = !String(i.value || '').trim();
-        if (vacio || !i.checkValidity()) { i.style.borderColor = 'red'; ok = false; }
-        else { i.style.borderColor = '#ddd'; }
-    });
-    if (!ok) showStatus("Faltan datos obligatorios en este paso.", "error");
-    return ok;
+    return validarContenedor(document.getElementById('step-int-2'));
 }
 
 // ============================================================================
@@ -2382,6 +2526,17 @@ function statusDniRC(msg, tipo) {
     el.className = 'dni-status' + (tipo ? ' ' + tipo : '');
 }
 
+// El nombre del empleado se pide SOLO si el DNI no esta en el padron.
+// Si lo encuentra, el campo se completa y se oculta: el nombre ya se ve en
+// el cartel verde debajo del DNI. Regla: oculto solo si esta autocompletado,
+// asi un campo oculto nunca puede quedar vacio.
+function mostrarCamposChoferRV(mostrar) {
+    const el = document.getElementById('rc_nombre_chofer');
+    if (el) el.classList.toggle('hidden', !mostrar);
+}
+
+let seqDniRC = 0;
+
 async function buscarChoferRC() {
     const input = document.getElementById('rc_dni_chofer');
     if (!input) return;
@@ -2398,15 +2553,17 @@ async function buscarChoferRC() {
                 el.classList.remove('autocompletado');
             }
         });
+        mostrarCamposChoferRV(true);
     };
 
-    if (dni.length < 7) { statusDniRC(''); limpiar(); return; }
+    limpiar();
+    if (dni.length < 7) { statusDniRC(''); return; }
 
     statusDniRC('Buscando empleado...', 'buscando');
+    const miTurno = ++seqDniRC;
     try {
         const data = await rpc('buscar_chofer', { p_dni: dni });
-        if (document.getElementById('rc_dni_chofer').value.replace(/\D/g, '') !== dni) return;
-        limpiar();
+        if (miTurno !== seqDniRC) return;
         if (!data || !data.encontrado) {
             statusDniRC('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
             return;
@@ -2415,10 +2572,13 @@ async function buscarChoferRC() {
         choferRC = c;
         rellenarCampoChofer('rc_nombre_chofer', c.nombre_completo);
         rellenarCampoChofer('rc_tel_contacto', c.telefono);
+        const nom = document.getElementById('rc_nombre_chofer');
+        if (nom && nom.value.trim()) mostrarCamposChoferRV(false);
         let msg = c.nombre_completo || 'Empleado encontrado';
         if (c.op) msg += ' — ' + c.op + (c.legajo ? ' (leg. ' + c.legajo + ')' : '');
         statusDniRC(msg, 'ok');
     } catch (err) {
+        if (miTurno !== seqDniRC) return;
         limpiar();
         statusDniRC('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
         console.warn('buscar_chofer (RC) fallo:', err.message);
@@ -2452,6 +2612,9 @@ function initAutocompletadoRC() {
 // ============================================================================
 let claveRV = '';            // solo en memoria, mientras dura la pantalla
 let ampliandoRV = null;      // {id, nro} de la denuncia que se esta ampliando
+// Archivos de la carga original de la RV que se esta ampliando. Se conservan
+// en el PDF nuevo. Antes no se listaban y la ampliacion "borraba" las fotos.
+let archivosRVPrevios = [];
 
 function abrirAmpliarRV() {
     limpiarStatus();
@@ -2459,6 +2622,8 @@ function abrirAmpliarRV() {
     document.getElementById('rv_clave').value = '';
     document.getElementById('rv-lista').innerHTML = '';
     document.getElementById('rv-clave-status').innerText = '';
+    const btnVer = document.getElementById('btn-ver-rv');
+    if (btnVer) btnVer.innerText = 'Ver denuncias';
     document.getElementById('pantalla-validacion').classList.add('hidden');
     document.getElementById('pantalla-ampliar-rv').classList.remove('hidden');
 }
@@ -2473,24 +2638,29 @@ async function listarRVAmpliables() {
     const clave = document.getElementById('rv_clave').value;
     const st = document.getElementById('rv-clave-status');
     const lista = document.getElementById('rv-lista');
+    const btn = document.getElementById('btn-ver-rv');
     lista.innerHTML = '';
-    st.innerText = 'Verificando...'; st.className = 'dni-status buscando';
+    st.innerText = 'Buscando...'; st.className = 'status-bajo buscando';
+    if (btn) btn.disabled = true;
 
     try {
         const r = await rpc('listar_rv_ampliables', { p_clave: clave });
         if (!r || !r.ok) {
-            st.innerText = 'Clave incorrecta.'; st.className = 'dni-status aviso';
+            st.innerText = 'Clave incorrecta.'; st.className = 'status-bajo aviso';
+            if (btn) btn.innerText = 'Ver denuncias';
             return;
         }
         claveRV = clave;
+        // Ya cargada una vez: el boton pasa a ser "Actualizar lista"
+        if (btn) btn.innerText = 'Actualizar lista';
         const denuncias = r.denuncias || [];
         if (!denuncias.length) {
             st.innerText = 'No hay denuncias de Riesgos Varios para ampliar.';
-            st.className = 'dni-status aviso';
+            st.className = 'status-bajo aviso';
             return;
         }
         st.innerText = `${denuncias.length} denuncia${denuncias.length === 1 ? '' : 's'} disponible${denuncias.length === 1 ? '' : 's'}.`;
-        st.className = 'dni-status ok';
+        st.className = 'status-bajo ok';
 
         const esc = (s) => String(s == null ? '' : s)
             .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -2504,18 +2674,19 @@ async function listarRVAmpliables() {
         lista.innerHTML = denuncias.map((d, i) => {
             window.__rvPrevias[i] = d;
             return `
-            <div class="sin-card ampliable">
+            <div class="sin-card ampliable compacta">
                 <div class="sin-info">
-                    <strong>${esc(d.nro_siniestro)}</strong><br>
-                    ${esc(fmt(d.fecha_hecho))} ${esc(d.hora_hecho || '')} · ${esc(d.nombre_chofer || 'S/D')}<br>
-                    ${esc(d.lugar || '')}
+                    <strong>${esc(d.nro_siniestro)}</strong> · ${esc(fmt(d.fecha_hecho))} ${esc(d.hora_hecho || '')}<br>
+                    <span>${esc(d.nombre_chofer || 'S/D')}${d.lugar ? ' · ' + esc(d.lugar) : ''}</span>
                 </div>
                 <button class="btn-ampliar" onclick="iniciarAmpliacionRV(${i})">Ampliar</button>
             </div>`;
         }).join('');
     } catch (err) {
         st.innerText = 'Error: ' + err.message;
-        st.className = 'dni-status aviso';
+        st.className = 'status-bajo aviso';
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }
 
@@ -2544,9 +2715,32 @@ async function iniciarAmpliacionRV(idx) {
         set('rc_terc_bien', d.patente_tercero);
         const selA = document.getElementById('rc_autoridad');
         if (selA && d.intervino_autoridad) selA.value = d.intervino_autoridad;
+        actualizarPoliciaRV();
+        set('rc_dependencia_tipo', d.dependencia_tipo || 'COMISARIA');
+        set('rc_dependencia_nro', d.dependencia_nro);
         choferRC = (d.legajo_chofer || d.op_chofer)
             ? { legajo: d.legajo_chofer, op: d.op_chofer } : null;
         ultimoDniRC = String(d.dni_chofer || '').replace(/\D/g, '');
+        mostrarCamposChoferRV(true);
+
+        // Archivos ya cargados: se conservan en el PDF ampliado
+        try {
+            const ra = await rpc('listar_archivos_rv', { p_id: d.id, p_clave: claveRV });
+            archivosRVPrevios = (ra && ra.ok && Array.isArray(ra.archivos)) ? ra.archivos : [];
+        } catch (e) {
+            archivosRVPrevios = [];
+            console.warn('No se pudieron listar los archivos anteriores:', e.message);
+        }
+        const boxPrev = document.getElementById('rv-archivos-previos');
+        if (boxPrev) {
+            if (archivosRVPrevios.length) {
+                boxPrev.textContent = `Ya hay ${archivosRVPrevios.length} archivo${archivosRVPrevios.length === 1 ? '' : 's'} `
+                    + `cargado${archivosRVPrevios.length === 1 ? '' : 's'} en esta denuncia: se conservan. Podés sumar más.`;
+                boxPrev.classList.remove('hidden');
+            } else {
+                boxPrev.classList.add('hidden');
+            }
+        }
 
         showStatus(`Ampliando la denuncia ${d.nro_siniestro}. Completá lo que falte y finalizá.`, 'success');
     } catch (err) {
@@ -2568,15 +2762,21 @@ function iniciarFlujoRC() {
     statusDniRC('');
 
     ['rc_dni_chofer','rc_nombre_chofer','rc_calle','rc_localidad','rc_provincia',
-     'rc_tel_contacto','rc_mail_contacto','rc_danos','rc_relato',
+     'rc_tel_contacto','rc_mail_contacto','rc_danos','rc_relato','rc_dependencia_nro',
      'rc_terc_nombre','rc_terc_doc','rc_terc_tel','rc_terc_dom','rc_terc_bien'].forEach(id => {
         const el = document.getElementById(id);
         if (el) { el.value = ''; el.style.borderColor = '#ddd'; el.classList.remove('autocompletado'); }
     });
     const selA = document.getElementById('rc_autoridad');
     if (selA) selA.value = 'NO';
+    actualizarPoliciaRV();
     const f = document.getElementById('rc_fotos');
     if (f) f.value = '';
+    archivosRVPrevios = [];
+    const boxPrev = document.getElementById('rv-archivos-previos');
+    if (boxPrev) boxPrev.classList.add('hidden');
+    mostrarCamposChoferRV(true);
+    congelarFormulario('pantalla-formulario-rc', false);
 
     const hoy = new Date().toISOString().split('T')[0];
     const fech = document.getElementById('rc_fecha');
@@ -2614,28 +2814,15 @@ function cambiarPasoRC(paso) {
 }
 
 function validarYPasarRC(proximoPaso) {
-    const inputs = document.getElementById(`step-rc-${proximoPaso - 1}`).querySelectorAll('[required]');
-    let valido = true;
-    inputs.forEach(i => {
-        if (!i.checkValidity()) { i.style.borderColor = 'red'; valido = false; }
-        else { i.style.borderColor = '#ddd'; }
-    });
-    if (valido) cambiarPasoRC(proximoPaso);
+    if (validarContenedor(document.getElementById(`step-rc-${proximoPaso - 1}`))) {
+        cambiarPasoRC(proximoPaso);
+    }
 }
 
 function abrirModalRC() {
     // Misma validacion que el interno: sin esto se podia confirmar sin daños
     // ni relato y el error aparecia recien cuando lo rechazaba la base.
-    const paso = document.getElementById('step-rc-2');
-    if (paso) {
-        let ok = true;
-        paso.querySelectorAll('[required]').forEach(i => {
-            const vacio = !String(i.value || '').trim();
-            if (vacio || !i.checkValidity()) { i.style.borderColor = 'red'; ok = false; }
-            else { i.style.borderColor = '#ddd'; }
-        });
-        if (!ok) { showStatus("Faltan datos obligatorios en este paso.", "error"); return; }
-    }
+    if (!validarContenedor(document.getElementById('step-rc-2'))) return;
 
     flujoActivo = 'RC';
     document.getElementById('modal-titulo').innerText = "¿Generar la denuncia?";
@@ -2668,6 +2855,8 @@ async function enviarSiniestroRC() {
             danos_tercero: val('rc_danos'),
             relato: valRaw('rc_relato'),
             intervino_autoridad: val('rc_autoridad'),
+            dependencia_tipo: ['POLICIA','AMBOS'].includes(val('rc_autoridad')) ? val('rc_dependencia_tipo') : '',
+            dependencia_nro:  ['POLICIA','AMBOS'].includes(val('rc_autoridad')) ? val('rc_dependencia_nro')  : '',
             mail_contacto: valRaw('rc_mail_contacto'),
             // Damnificado (opcional)
             nombre_cond_tercero: val('rc_terc_nombre'),
@@ -2708,19 +2897,23 @@ async function enviarSiniestroRC() {
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
 
         // 3. Fotos. En un reintento no se vuelven a subir.
-        const links = envioEnCurso.fotos || [];
+        // En una ampliacion arrancamos con los archivos de la carga original.
+        const links = envioEnCurso.fotos || (ampliandoRV
+            ? archivosRVPrevios.map((a, i) => ({ url: a.url, label: `archivo_${i + 1}` }))
+            : []);
+        const yaHabia = links.length;
         const files = envioEnCurso.fotos ? [] : document.getElementById('rc_fotos').files;
         for (let i = 0; i < files.length; i++) {
             const blob = await comprimirImagen(files[i]);
             const path = `${folder}/rc_${i}_${tokenArchivo()}.${extensionDe(blob)}`;
-            btn.innerText = "Subiendo fotos...";
+            btn.innerText = "Subiendo archivos...";
             const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
                 method: 'POST',
                 headers: sbHeaders({ 'Content-Type': blob.type || 'image/jpeg' }),
                 body: blob
             });
             if (!resUp.ok) throw new Error("Error al subir foto " + (i + 1));
-            links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, label: `foto_${i + 1}` });
+            links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, label: `archivo_${yaHabia + i + 1}` });
         }
         envioEnCurso.fotos = links;
         btn.innerText = "Enviando...";
@@ -2746,7 +2939,12 @@ async function enviarSiniestroRC() {
         setVal('prc-relato', valRaw('rc_relato'));
         const etiquetasAut = { NO: 'No intervino', POLICIA: 'Policía',
                                BOMBEROS: 'Bomberos', AMBOS: 'Policía y bomberos' };
-        setVal('prc-autoridad', etiquetasAut[val('rc_autoridad')] || val('rc_autoridad'));
+        let txtAut = etiquetasAut[val('rc_autoridad')] || val('rc_autoridad');
+        if (['POLICIA','AMBOS'].includes(val('rc_autoridad'))) {
+            const tDep = val('rc_dependencia_tipo') === 'FISCALIA' ? 'Fiscalía' : 'Comisaría';
+            txtAut += ` — ${tDep} Nº ${val('rc_dependencia_nro') || 'NO INFORMA'}`;
+        }
+        setVal('prc-autoridad', txtAut);
 
         const dam = document.getElementById('prc-damnificado');
         if (dam) {
@@ -2831,10 +3029,12 @@ async function enviarSiniestroRC() {
             tipo_envio: 'RC'
         });
 
+        const eraAmpliacion = !!ampliandoRV;
         reiniciarEnvio();
-        ofrecerDescargaPDF(pdfBlob, `Riesgos_Varios_${nroSiniestroFinal}.pdf`);
-        showStatus(`¡ÉXITO! Registro ${nroSiniestroFinal} generado.`, "success");
-        mostrarVolverAlInicio();
+        mostrarPantallaExito(
+            eraAmpliacion ? 'Denuncia ampliada' : 'Denuncia cargada',
+            nroSiniestroFinal, pdfBlob,
+            `Riesgos Varios ${nroSiniestroFinal}.pdf`);
 
     } catch (e) {
         congelarFormulario('pantalla-formulario-rc', false);
@@ -2925,7 +3125,7 @@ async function enviarSiniestroInterno() {
         for (let i = 0; i < files.length; i++) {
             const blob = await comprimirImagen(files[i]);
             const path = `${folder}/interno_${i}_${tokenArchivo()}.${extensionDe(blob)}`;
-            btn.innerText = "Subiendo fotos...";
+            btn.innerText = "Subiendo archivos...";
             const resUp = await fetch(`${URL_API}/storage/v1/object/denuncias/${path}`, {
                 method: 'POST',
                 headers: sbHeaders({ 'Content-Type': blob.type || 'image/jpeg' }),
@@ -3048,9 +3248,8 @@ async function enviarSiniestroInterno() {
         });
 
         reiniciarEnvio();
-        ofrecerDescargaPDF(pdfBlob, `Constancia_${nroSiniestroFinal}_${unidad.DOMINIO}.pdf`);
-        showStatus(`¡ÉXITO! Constancia interna ${nroSiniestroFinal} generada.`, "success");
-        mostrarVolverAlInicio();
+        mostrarPantallaExito('Constancia interna cargada', nroSiniestroFinal, pdfBlob,
+            `Constancia ${nroSiniestroFinal} ${unidad.DOMINIO}.pdf`);
     } catch (e) {
         congelarFormulario('pantalla-formulario-interno', false);
         const yaCreada = envioEnCurso && envioEnCurso.id;
