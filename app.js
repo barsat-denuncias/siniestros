@@ -1136,12 +1136,14 @@ function resetearPaso2() {
     });
 }
 
-// Rellena un campo SOLO si esta vacio o si el valor lo habiamos puesto
-// nosotros. Nunca pisamos algo que el chofer escribio a mano.
+// Rellena un campo con el dato del padron. Si el DNI se encontro, el padron
+// manda: antes no se pisaba lo escrito a mano, y si alguien cargaba un DNI
+// equivocado con un nombre, volvia y ponia el DNI correcto, quedaba el nombre
+// viejo en el formulario y el correcto solo en el cartel verde.
+// Lo que el padron no tiene (valor vacio) no se toca.
 function rellenarCampoChofer(id, valor) {
     const el = document.getElementById(id);
     if (!el || !valor) return;
-    if (el.value.trim() !== '' && !el.classList.contains('autocompletado')) return;
     el.value = valor;
     el.style.borderColor = '#ddd';
     marcarCampo(id, 'autocompletado');
@@ -1626,14 +1628,10 @@ window.onload = function() {
     });
 
     // ===== Validaciones del flujo INTERNO =====
-    // DNI y telefono: solo numeros (sin "NO INFORMA", aca todo es obligatorio numerico)
-    ['i_dni_chofer', 'i_tel_chofer'].forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.addEventListener('input', () => {
-            el.value = el.value.replace(/[^0-9]/g, '');
-        });
-    });
+    // DNI y telefono: numeros o NO INFORMA, igual que en los otros flujos.
+    // Antes eran solo numeros: sin telefono no se podia avanzar y habia que
+    // inventar uno.
+    ['i_dni_chofer', 'i_tel_chofer'].forEach(aplicarValidacionEstricta);
 
     // El monto NO puede filtrarse borrando todo lo que no sea digito: pegar
     // "1.234,56" daba "123456", cien veces mas. Se aceptan puntos y coma, y al
@@ -1749,21 +1747,21 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
     }
 });
 
-// Confirmacion de la unidad encontrada, arriba de las pantallas que siguen.
-// Asi el chofer ve enseguida si escribio mal la patente y cayo en otro camion.
+// Patente de la unidad arriba de las pantallas que siguen, dibujada como una
+// chapa (franja azul y letras negras): asi el chofer ve enseguida sobre que
+// unidad esta cargando y si escribio mal la patente.
 function pintarUnidadValidada() {
-    const tipos = { TRACTOR: 'Tractor', SEMI: 'Semirremolque', CHASIS: 'Chasis' };
-    const partes = [
-        unidad.MODELO,
-        tipos[String(unidad.TIPO_UNIDAD || '').toUpperCase()],
-        datosEmpresa.nombre_clave || unidad.RAZON_SOCIAL
-    ].filter(Boolean);
     document.querySelectorAll('.unidad-validada').forEach(el => {
         el.replaceChildren();
-        const b = document.createElement('b');
-        b.textContent = unidad.DOMINIO || '';
-        el.appendChild(b);
-        if (partes.length) el.appendChild(document.createTextNode(' · ' + partes.join(' · ')));
+        const banda = document.createElement('span');
+        banda.className = 'chapa-banda';
+        banda.textContent = 'REPÚBLICA ARGENTINA';
+        const num = document.createElement('span');
+        num.className = 'chapa-num';
+        num.textContent = unidad.DOMINIO || '';
+        el.appendChild(banda);
+        el.appendChild(num);
+        el.title = 'Unidad sobre la que se está cargando';
         el.classList.toggle('hidden', !unidad.DOMINIO);
     });
 }
@@ -1811,7 +1809,7 @@ function mostrarPasoIntermedio(siniestros) {
                 <div class="sin-info">
                     <strong>SN: ${esc(s.nro_siniestro)}</strong> ${chipTipo}<br>
                     Dominio: ${esc(s.dominio || '')}<br>
-                    Siniestro: ${esc(fmtFecha(s.fecha_hecho))} ${esc(s.hora_hecho || '')} · Cargada: ${esc(fmtFecha(s.fecha_carga))}
+                    Denuncia: ${esc(fmtFecha(s.fecha_hecho))} ${esc(s.hora_hecho || '')} · Cargada: ${esc(fmtFecha(s.fecha_carga))}
                     ${hintNoAmpliable}
                 </div>
                 ${ampliable ? `<button class="btn-ampliar" onclick="iniciarAmpliacion(${idx})">Ampliar esta denuncia</button>` : ''}
@@ -2207,7 +2205,7 @@ function agregarLesionado(datos) {
         <div class="les-grid">
             <input type="text" data-campo="apellido"  placeholder="Apellido*"  maxlength="40" value="${esc(d.apellido)}">
             <input type="text" data-campo="nombre"    placeholder="Nombre*"    maxlength="40" value="${esc(d.nombre)}">
-            <input type="text" data-campo="dni"       placeholder="DNI*"       maxlength="10" inputmode="numeric" value="${esc(d.dni)}">
+            <input type="text" data-campo="dni"       placeholder="DNI*"       maxlength="10" value="${esc(d.dni)}">
             <select data-campo="genero">
                 <option value="">Género*</option>
                 <option value="MASCULINO">Masculino</option>
@@ -2427,18 +2425,42 @@ function irAlCampo(el) {
 function validarContenedor(cont) {
     if (!cont) return true;
     let primero = null;
+    cont.querySelectorAll('.campo-aviso').forEach(p => p.remove());
     cont.querySelectorAll('[required]').forEach(i => {
         if (i.offsetParent === null) return;      // oculto: no aplica
         const vacio = !String(i.value || '').trim();
         if (vacio || !i.checkValidity()) {
             i.style.borderColor = 'red';
             if (!primero) primero = i;
+            // Lleno pero invalido: el rojo solo no explica que esta mal
+            if (!vacio) avisoCampo(i, motivoInvalido(i));
         } else {
             i.style.borderColor = '#ddd';
         }
     });
     if (primero) { irAlCampo(primero); return false; }
     return true;
+}
+
+function motivoInvalido(i) {
+    const v = i.validity;
+    if (i.type === 'date' && v.rangeUnderflow) return 'La fecha no puede ser anterior al 01/01/2025.';
+    if (i.type === 'date' && v.rangeOverflow)  return 'La fecha no puede ser posterior a hoy.';
+    if (v.patternMismatch) return (i.title || 'El formato no es válido') + '.';
+    return 'Revisá este dato.';
+}
+
+// Mensaje chico en rojo debajo del campo (o de la fila fecha/hora). Se va
+// solo cuando el chofer corrige el dato.
+function avisoCampo(el, texto) {
+    const ancla = el.parentElement && el.parentElement.style.display === 'flex' ? el.parentElement : el;
+    const p = document.createElement('p');
+    p.className = 'campo-aviso';
+    p.textContent = texto;
+    ancla.insertAdjacentElement('afterend', p);
+    const sacar = () => p.remove();
+    el.addEventListener('input', sacar, { once: true });
+    el.addEventListener('change', sacar, { once: true });
 }
 
 function validarYPasar(proximoPaso) {
@@ -3008,10 +3030,10 @@ async function validarYPasarInterno(proximoPaso) {
                 status.innerText = (chequeo && chequeo.mensaje)
                     ? chequeo.mensaje
                     : `Dominio ${dom2} no figura en la flota.`;
-                // Polizas distintas: ofrecer pasar directo a la denuncia con tercero
-                if (chequeo && (chequeo.motivo === 'OTRA_POLIZA' || chequeo.motivo === 'SIN_POLIZA')) {
-                    status.innerText = 'Las unidades están en pólizas distintas: no corresponde '
-                        + 'constancia interna. Cargala como denuncia con tercero.';
+                // Empresas distintas (o sin empresa conocida): ofrecer pasar
+                // directo a la denuncia con tercero. OTRA_POLIZA / SIN_POLIZA
+                // quedan por compatibilidad con la regla anterior.
+                if (chequeo && ['OTRA_EMPRESA', 'SIN_EMPRESA', 'OTRA_POLIZA', 'SIN_POLIZA'].includes(chequeo.motivo)) {
                     if (btnTercero) btnTercero.classList.remove('hidden');
                 }
                 return;
@@ -3022,10 +3044,13 @@ async function validarYPasarInterno(proximoPaso) {
                 DOMINIO: dom2,
                 MODELO: chequeo.modelo,
                 RAZON_SOCIAL: chequeo.razon_social,
-                POLIZA: chequeo.poliza
+                POLIZA: chequeo.poliza,
+                EMPRESA: chequeo.empresa
             };
             status.className = 'status-bajo ok';
-            status.innerText = `✓ ${chequeo.modelo || ''} — misma póliza (${chequeo.poliza})`;
+            // La regla es misma EMPRESA (PATAGONIA y PATAGONIA CP cuentan
+            // igual), aunque las polizas sean distintas
+            status.innerText = `✓ ${chequeo.modelo || ''} — misma empresa${chequeo.empresa ? ' (' + chequeo.empresa + ')' : ''}`;
             pintarResumenUnidades();
             cambiarPasoInterno(1);
         } catch (err) {
@@ -3732,7 +3757,13 @@ async function enviarSiniestroInterno() {
             setVal('pi-v2-label', 'Parte embestida:');
             setVal('pi-v2-do', (unidad2 && unidad2.DOMINIO) || val('i_patente2'));
         }
-        setVal('pi-poliza', unidad.POLIZA || '');
+        // Con la regla de misma empresa las dos unidades pueden tener polizas
+        // distintas (PATAGONIA y PATAGONIA CP): en ese caso van las dos.
+        const pol1 = unidad.POLIZA || '';
+        const pol2 = (val('i_tipo_afectado') || 'UNIDAD') === 'UNIDAD' && unidad2 ? (unidad2.POLIZA || '') : '';
+        setVal('pi-poliza', pol2 && pol2 !== pol1
+            ? `${pol1} (${unidad.DOMINIO}) / ${pol2} (${unidad2.DOMINIO})`
+            : pol1);
 
         setVal('pi-relato', valRaw('i_relato'));
 

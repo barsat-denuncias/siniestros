@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="grupo_barsat_logistico_logo.png">
     <!-- El ?v= evita que el navegador sirva una version cacheada.
          Al cambiar app.js o style.css, subir el numero. -->
-    <link rel="stylesheet" href="style.css?v=25">
+    <link rel="stylesheet" href="style.css?v=26">
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -76,20 +76,21 @@
 
             <div class="step" id="step-rc-1">
                 <p class="subtitulo-bloque">Empleado que interviene</p>
-                <input type="text" id="rc_dni_chofer" placeholder="DNI del empleado*" required maxlength="10" inputmode="numeric" autocomplete="off">
+                <input type="text" id="rc_dni_chofer" placeholder="DNI del empleado*" required maxlength="10" autocomplete="off">
                 <p id="rc-dni-status" class="dni-status"></p>
                 <input type="text" id="rc_nombre_chofer" placeholder="Apellido y Nombre*" required maxlength="60">
 
                 <p class="subtitulo-bloque">Día, hora y lugar</p>
                 <div style="display: flex; gap: 10px;">
-                    <input type="date" id="rc_fecha" required>
+                    <input type="date" id="rc_fecha" required min="2025-01-01">
                     <input type="time" id="rc_hora" required>
                 </div>
-                <input type="text" id="rc_calle" placeholder="Calle y altura / entre calles*" required maxlength="80">
-                <input type="text" id="rc_localidad" placeholder="Localidad*" required maxlength="40">
+                <!-- Mismo orden que en la denuncia con tercero: provincia primero -->
                 <select id="rc_provincia" required>
                     <option value="" disabled selected>Provincia*</option>
                 </select>
+                <input type="text" id="rc_localidad" placeholder="Localidad*" required maxlength="40">
+                <input type="text" id="rc_calle" placeholder="Calle y altura / entre calles*" required maxlength="80">
 
                 <p class="subtitulo-bloque">Contacto</p>
                 <input type="text" id="rc_tel_contacto" placeholder="Teléfono de contacto*" required maxlength="15">
@@ -163,7 +164,7 @@
             <p style="font-size:13px; color:#666; margin-bottom:20px;">Elegí el tipo de carga que corresponde.</p>
             <button onclick="iniciarFlujoExterno()" style="background:#0056b3; margin-bottom:12px;">Denuncia con Tercero</button>
             <button onclick="iniciarFlujoInterno()" style="background:#28a745;">Siniestro Interno</button>
-            <p style="font-size:11px; color:#888; margin-top:18px;">El siniestro interno es para choques entre dos vehículos de la flota (misma póliza) o daños a un bien de la empresa. Genera una constancia más corta, sin trámite con aseguradora.</p>
+            <p style="font-size:11px; color:#888; margin-top:18px;">El siniestro interno es para choques entre dos vehículos de la misma empresa o daños a un bien de la empresa. Genera una constancia más corta, sin trámite con aseguradora.</p>
             <button class="btn-secundario" onclick="location.reload()">Volver</button>
         </div>
 
@@ -181,7 +182,7 @@
             <div class="step" id="step-1">
                 <label>Fecha y Hora del siniestro*</label>
                 <div style="display: flex; gap: 10px;">
-                    <input type="date" id="fecha_hecho" required>
+                    <input type="date" id="fecha_hecho" required min="2025-01-01">
                     <input type="time" id="hora_hecho" required>
                 </div>
 
@@ -233,12 +234,12 @@
                     <input type="text" id="tel_chofer" placeholder="Teléfono de contacto*" required maxlength="15">
                     <label class="mini" for="domicilio_chofer">Domicilio*</label>
                     <input type="text" id="domicilio_chofer" placeholder="Domicilio Conductor*" required maxlength="80">
-                    <label class="mini" for="cp_chofer">Código postal*</label>
-                    <input type="text" id="cp_chofer" placeholder="Código Postal Conductor*" required maxlength="10">
-                    <label class="mini" for="loc_chofer">Localidad*</label>
-                    <input type="text" id="loc_chofer" placeholder="Localidad Conductor*" required maxlength="40">
                     <label class="mini" for="prov_chofer">Provincia*</label>
                     <input type="text" id="prov_chofer" placeholder="Provincia Conductor*" required maxlength="40">
+                    <label class="mini" for="loc_chofer">Localidad*</label>
+                    <input type="text" id="loc_chofer" placeholder="Localidad Conductor*" required maxlength="40">
+                    <label class="mini" for="cp_chofer">Código postal*</label>
+                    <input type="text" id="cp_chofer" placeholder="Código Postal Conductor*" required maxlength="10">
                 </div>
                 <!-- Siguiente va FUERA del bloque que se oculta mientras se
                      resuelve el DNI. Si queda adentro, un conductor sin
@@ -375,13 +376,13 @@
                 <div id="resumen-unidades" class="resumen-unidades"></div>
                 <input type="text" id="i_lugar" placeholder="Lugar del hecho*" required maxlength="80">
                 <div style="display: flex; gap: 10px;">
-                    <input type="date" id="i_fecha" required>
+                    <input type="date" id="i_fecha" required min="2025-01-01">
                     <input type="time" id="i_hora" required>
                 </div>
-                <input type="text" id="i_dni_chofer" placeholder="DNI Conductor*" required maxlength="9" inputmode="numeric" autocomplete="off">
+                <input type="text" id="i_dni_chofer" placeholder="DNI Conductor*" required maxlength="10" autocomplete="off">
                 <p id="i-dni-status" class="dni-status"></p>
                 <input type="text" id="i_nombre_chofer" placeholder="Apellido y Nombre Conductor*" required maxlength="50">
-                <input type="text" id="i_tel_chofer" placeholder="Teléfono Conductor*" required maxlength="15" inputmode="numeric">
+                <input type="text" id="i_tel_chofer" placeholder="Teléfono Conductor*" required maxlength="15">
                 <button onclick="validarYPasarInterno(2)">Siguiente</button>
                 <button class="btn-secundario" onclick="cambiarPasoInterno(0)">Volver</button>
             </div>
@@ -546,12 +547,12 @@
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-top: 8px; margin-bottom: 10px; font-size: 11pt;">9 &nbsp; CROQUIS Y RELATO</div>
                 <div style="display: flex; gap: 18px; align-items: flex-start; margin-bottom: 12px;">
                     <div style="width: 185px; height: 185px; position: relative;"><img id="p-croquis" style="width: 100%; height: 100%; display: block;" /></div>
-                    <div style="flex: 1;"><div style="font-weight: bold; margin-bottom: 4px;">DETALLES DEL SINIESTRO:</div><div id="p-relato" style="font-size: 9pt; white-space: pre-wrap; min-height: 90px; line-height: 1.35; border: 1px solid #eee; padding: 8px;"></div></div>
+                    <div style="flex: 1;"><div style="font-weight: bold; margin-bottom: 4px;">DETALLES DEL SINIESTRO:</div><div id="p-relato" style="font-size: 9pt; white-space: pre-wrap; min-height: 90px; line-height: 1.35; border: 1px solid transparent; padding: 8px;"></div></div>
                 </div>
                 </div>
                 <div class="pdf-no-cortar">
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-top: 8px; margin-bottom: 4px; font-size: 11pt;">REGISTRO FOTOGRÁFICO</div>
-                <div id="p-lista-fotos" style="font-size: 8pt; color: #444; margin-top: 4px; border-top: 1px solid #ccc; padding-top: 4px; line-height: 1.1; margin-bottom: 12px;"></div>
+                <div id="p-lista-fotos" style="font-size: 8pt; color: #444; margin-top: 4px; padding-top: 4px; line-height: 1.1; margin-bottom: 12px;"></div>
                 </div>
 
                 <!-- Queda en blanco a proposito: se completa a mano al imprimir,
@@ -559,17 +560,17 @@
                 <div class="pdf-no-cortar">
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-top: 8px; margin-bottom: 2px; font-size: 11pt;">10 &nbsp; DATOS DEL DENUNCIANTE</div>
                 <div style="display: grid; grid-template-columns: 1.4fr 1fr; column-gap: 16px; font-size: 8.5pt;">
-                    <div style="border-bottom: 1px solid #888; padding-top: 11px;"><b>Nombre y Apellido:</b></div>
-                    <div style="border-bottom: 1px solid #888; padding-top: 11px;"><b>Género:</b></div>
-                    <div style="border-bottom: 1px solid #888; padding-top: 11px;"><b>Tipo y Nº documento:</b></div>
-                    <div style="border-bottom: 1px solid #888; padding-top: 11px;"><b>Teléfono:</b></div>
-                    <div style="border-bottom: 1px solid #888; padding-top: 11px;"><b>Domicilio:</b></div>
-                    <div style="border-bottom: 1px solid #888; padding-top: 11px;"><b>CP:</b></div>
+                    <div style="padding-top: 11px;"><b>Nombre y Apellido:</b></div>
+                    <div style="padding-top: 11px;"><b>Género:</b></div>
+                    <div style="padding-top: 11px;"><b>Tipo y Nº documento:</b></div>
+                    <div style="padding-top: 11px;"><b>Teléfono:</b></div>
+                    <div style="padding-top: 11px;"><b>Domicilio:</b></div>
+                    <div style="padding-top: 11px;"><b>CP:</b></div>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 16px; font-size: 8.5pt; margin-bottom: 4px;">
-                    <div style="border-bottom: 1px solid #888; padding-top: 11px;"><b>Localidad:</b></div>
-                    <div style="border-bottom: 1px solid #888; padding-top: 11px;"><b>Provincia:</b></div>
-                    <div style="border-bottom: 1px solid #888; padding-top: 11px;"><b>País:</b> ARGENTINA</div>
+                    <div style="padding-top: 11px;"><b>Localidad:</b></div>
+                    <div style="padding-top: 11px;"><b>Provincia:</b></div>
+                    <div style="padding-top: 11px;"><b>País:</b> ARGENTINA</div>
                 </div>
                 </div>
 
@@ -612,7 +613,7 @@
                 <div style="margin-bottom: 20px;"><b>Póliza:</b> <span id="pi-poliza"></span></div>
 
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">4 &nbsp; RELATO Y DAÑOS</div>
-                <div id="pi-relato" style="font-size: 9.5pt; white-space: pre-wrap; min-height: 80px; line-height: 1.4; border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;"></div>
+                <div id="pi-relato" style="font-size: 9.5pt; white-space: pre-wrap; min-height: 80px; line-height: 1.4; border: 1px solid transparent; padding: 10px; margin-bottom: 20px;"></div>
 
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">5 &nbsp; PRESUPUESTO</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 20px;">
@@ -621,7 +622,7 @@
                 </div>
 
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 8px; font-size: 11pt;">6 &nbsp; REGISTRO FOTOGRÁFICO</div>
-                <div id="pi-lista-fotos" style="font-size: 8.5pt; color: #444; border-top: 1px solid #ccc; padding-top: 6px; line-height: 1.3;"></div>
+                <div id="pi-lista-fotos" style="font-size: 8.5pt; color: #444; padding-top: 6px; line-height: 1.3;"></div>
 
                 <div style="margin-top: auto; border-top: 1px solid #000; padding-top: 8px; font-size: 8pt; color: #555;">
                     Documento generado automáticamente por el sistema interno de siniestros.
@@ -667,14 +668,14 @@
 
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">3 &nbsp; DAÑOS Y RELATO</div>
                 <div style="margin-bottom: 8px;"><b>Daños ocasionados:</b> <span id="prc-danos"></span></div>
-                <div id="prc-relato" style="font-size: 9.5pt; white-space: pre-wrap; min-height: 70px; line-height: 1.4; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"></div>
+                <div id="prc-relato" style="font-size: 9.5pt; white-space: pre-wrap; min-height: 70px; line-height: 1.4; border: 1px solid transparent; padding: 10px; margin-bottom: 10px;"></div>
                 <div style="margin-bottom: 20px;"><b>¿Intervino policía o bomberos?:</b> <span id="prc-autoridad"></span></div>
 
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 10px; font-size: 11pt;">4 &nbsp; DAMNIFICADO</div>
                 <div id="prc-damnificado" style="margin-bottom: 20px;"></div>
 
                 <div style="border-top: 1.5px solid #000; font-weight: bold; padding-top: 5px; margin-bottom: 8px; font-size: 11pt;">5 &nbsp; REGISTRO FOTOGRÁFICO</div>
-                <div id="prc-lista-fotos" style="font-size: 8.5pt; color: #444; border-top: 1px solid #ccc; padding-top: 6px; line-height: 1.3;"></div>
+                <div id="prc-lista-fotos" style="font-size: 8.5pt; color: #444; padding-top: 6px; line-height: 1.3;"></div>
 
                 <div style="margin-top: auto; border-top: 1px solid #000; padding-top: 8px; font-size: 8pt; color: #555;">
                     Documento generado automáticamente por el sistema interno de siniestros.
@@ -682,6 +683,6 @@
             </div>
         </div>
     </div>
-    <script src="app.js?v=25"></script>
+    <script src="app.js?v=26"></script>
 </body>
 </html>

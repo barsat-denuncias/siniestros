@@ -1,0 +1,42 @@
+# Mantener despierto el proyecto de Supabase.
+# El plan gratuito pausa el proyecto despues de ~7 dias sin consultas, y una
+# app de denuncias puede pasar semanas sin uso (ya paso: el 9/9 estaba
+# pausado desde el 25/8 y la app tiraba "Failed to fetch").
+# Esto hace una consulta liviana cada 2 dias desde los servidores de GitHub.
+#
+# Si la consulta falla, la tarea queda en rojo y GitHub avisa por mail: sirve
+# tambien de alarma de que la base no responde.
+#
+# OJO: en un repo publico GitHub apaga las tareas programadas si pasan 60 dias
+# sin commits (avisa por mail antes). Por eso conviene tener ademas la tarea de
+# respaldo en cron-job.org.
+#
+# La clave es la publicable, la misma que ya esta en app.js: no da acceso a
+# ninguna tabla (la consulta devuelve [] por RLS), solo cuenta como actividad.
+
+name: Mantener Supabase activo
+
+on:
+  schedule:
+    - cron: '17 11 */2 * *'   # dias impares a las 08:17 de Argentina
+  workflow_dispatch:           # boton "Run workflow" para probarla a mano
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar la base
+        env:
+          SUPABASE_URL: https://ojsjxyxvcznoydhzhsrt.supabase.co
+          SUPABASE_KEY: sb_publishable__4dVId8Vbc2lsHIZrhzoMA_sRnfpxuh
+        run: |
+          for intento in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              "$SUPABASE_URL/rest/v1/Empresas?select=nombre_clave&limit=1" \
+              -H "apikey: $SUPABASE_KEY")
+            echo "Intento $intento: HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 20
+          done
+          echo "::error::Supabase no respondio 200. Revisar si el proyecto esta pausado."
+          exit 1

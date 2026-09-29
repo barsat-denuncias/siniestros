@@ -85,13 +85,27 @@ label.mini { font-size: 11px; color: #6c757d; margin: 6px 0 -4px; font-weight: 6
 
 .logo-inicio { display: block; height: 56px; width: auto; margin: 0 auto 6px; }
 
-/* Unidad validada: confirma al chofer en que camion esta cargando */
+/* Unidad validada: la patente dibujada como una chapa (franja azul arriba,
+   letras negras), centrada arriba de la pantalla. Solo el dominio: con
+   modelo, tipo y empresa era demasiado texto. */
 .unidad-validada {
-    font-size: 13px; color: #084298; background: #eef4fc;
-    border: 1px solid #cfe2ff; border-radius: 6px;
-    padding: 7px 10px; margin: 0 0 12px; text-align: left;
-    overflow-wrap: anywhere;
+    display: flex; flex-direction: column; align-items: stretch;
+    width: max-content; min-width: 128px; margin: 0 auto 14px;
+    background: #fff; border: 2px solid #1f2937; border-radius: 6px;
+    overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
+.unidad-validada.hidden { display: none !important; }
+.unidad-validada .chapa-banda {
+    background: #0b3d91; color: #fff; font-size: 7px; font-weight: 700;
+    letter-spacing: 1.2px; text-align: center; padding: 2px 8px;
+}
+.unidad-validada .chapa-num {
+    font-family: 'Arial Black', Arial, sans-serif; font-size: 20px; font-weight: 900;
+    letter-spacing: 2px; color: #111; text-align: center; padding: 3px 12px 4px;
+}
+
+/* Aviso debajo de un campo lleno pero invalido (fecha fuera de rango, mail) */
+.campo-aviso { color: #d9534f; font-size: 12px; text-align: left; margin: -4px 0 8px; }
 
 textarea {
     height: 100px;
@@ -129,6 +143,12 @@ button:hover {
 
 #progress {
     background: #0056b3;
+    height: 100%;
+    border-radius: 5px;
+    transition: 0.4s;
+}
+/* Las barras de Interno y Riesgos Varios no tenian alto y no se veian nunca */
+#progress-int, #progress-rc {
     height: 100%;
     border-radius: 5px;
     transition: 0.4s;
