@@ -1602,12 +1602,33 @@ async function cargarCroquisPrevio(url) {
     }
 }
 
+// En la PC el calendario no deja elegir fechas fuera de min/max (salen en
+// gris), pero en el celular la ruedita muestra cualquier año y recien al tocar
+// Siguiente aparecia el error. Ahora se avisa apenas se elige y se borra.
+function initFechasEnVivo() {
+    document.querySelectorAll('input[type="date"]').forEach(inp => {
+        inp.addEventListener('change', () => {
+            const v = inp.value;
+            if (!v) return;
+            const antes = inp.min && v < inp.min;
+            const despues = inp.max && v > inp.max;
+            if (!antes && !despues) { inp.style.borderColor = '#ddd'; return; }
+            inp.value = '';
+            inp.style.borderColor = 'red';
+            avisoCampo(inp, antes
+                ? 'La fecha no puede ser anterior al 01/01/2025.'
+                : 'La fecha no puede ser posterior a hoy.');
+        });
+    });
+}
+
 window.onload = function() {
     document.getElementById('fecha_hecho').setAttribute('max', hoyISO());
     llenarProvincias(document.getElementById('provincia'));
     llenarProvincias(document.getElementById('rc_provincia'));
     initAdjuntos();
     initBorrador();
+    initFechasEnVivo();
     // Dominio: mayusculas y solo letras y numeros. Si el chofer escribia
     // "AB 123 CD" o "ab-123-cd", el maxlength cortaba y no encontraba la unidad.
     const inpPat = document.getElementById('patente');

@@ -20,7 +20,14 @@ body {
     max-width: 600px;
     text-align: center;
     flex-shrink: 0;
+    /* Sin esto el relleno se sumaba al 100% de ancho: en un celular de 360px
+       la tarjeta medía 372 y se salía de la pantalla por los dos costados */
+    box-sizing: border-box;
 }
+
+/* Red de seguridad: si algo llegara a pasarse de ancho, que no se pueda
+   correr la pantalla de costado ni achicar todo para que entre */
+html, body { overflow-x: hidden; }
 
 .hidden {
     display: none !important; /* Esto es lo que arregla que no se vea todo junto */
@@ -46,7 +53,14 @@ select { background-color: #fff; color: #222; }
 @media (max-width: 480px) {
     body { padding: 12px 10px; }
     .card { padding: 20px 16px; }
+    /* El iPhone hace zoom solo al tocar un campo con letra de menos de 16px,
+       y despues no lo saca. Con 16px no hace zoom. (!important porque los
+       campos de lesionados tienen letra mas chica.) */
+    input:not([type="file"]), select, textarea { font-size: 16px !important; }
 }
+
+/* Fecha y hora van de a dos en una fila: que puedan achicarse para entrar */
+input[type="date"], input[type="time"] { min-width: 0; flex: 1 1 0; }
 
 /* Aviso de denuncia sin terminar (borrador automatico) */
 .aviso-borrador {
@@ -320,7 +334,7 @@ textarea.txt-chico {
 
 /* Modal de Confirmación */
 .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:2000; }
-.modal-content { background: white; padding: 30px; border-radius: 12px; max-width: 450px; width: 90%; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+.modal-content { background: white; padding: 30px; border-radius: 12px; max-width: 450px; width: 90%; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3); box-sizing: border-box; }
 
 /* === Lista de denuncias previas en pantalla de seleccion === */
 .sin-card {
