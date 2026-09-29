@@ -1769,17 +1769,24 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
 });
 
 // Patente de la unidad arriba de las pantallas que siguen, dibujada como una
-// chapa (franja azul y letras negras): asi el chofer ve enseguida sobre que
-// unidad esta cargando y si escribio mal la patente.
+// chapa: asi el chofer ve enseguida sobre que unidad esta cargando y si
+// escribio mal la patente.
+//   Mercosur (7, AB123CD): franja azul y letras negras sobre blanco.
+//   Vieja    (6, ABC123):  blanca, "ARGENTINA" en celeste arriba y el
+//                          dominio en blanco sobre un rectangulo negro.
 function pintarUnidadValidada() {
+    const dominio = unidad.DOMINIO || '';
+    const vieja = dominio.length === 6;
     document.querySelectorAll('.unidad-validada').forEach(el => {
         el.replaceChildren();
+        el.classList.toggle('chapa-vieja', vieja);
         const banda = document.createElement('span');
         banda.className = 'chapa-banda';
-        banda.textContent = 'REPÚBLICA ARGENTINA';
+        banda.textContent = vieja ? 'ARGENTINA' : 'REPÚBLICA ARGENTINA';
         const num = document.createElement('span');
         num.className = 'chapa-num';
-        num.textContent = unidad.DOMINIO || '';
+        // En la chapa vieja las letras y los numeros van separados: "FVH 304"
+        num.textContent = vieja ? dominio.slice(0, 3) + ' ' + dominio.slice(3) : dominio;
         el.appendChild(banda);
         el.appendChild(num);
         el.title = 'Unidad sobre la que se está cargando';
