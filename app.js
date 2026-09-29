@@ -55,6 +55,29 @@ const localidadesData = {
     "BUENOS AIRES": ["Avellaneda", "Lanús", "Lomas de Zamora", "Quilmes", "La Plata", "San Isidro", "Tigre", "Vicente López", "Pilar", "Morón"]
 };
 
+// Todas las provincias. Antes el desplegable solo tenia CABA y BUENOS AIRES:
+// un siniestro en ruta en Santa Fe o Neuquen no se podia cargar.
+// Las que no tienen lista de localidades piden la localidad escrita a mano.
+const PROVINCIAS = [
+    "CABA", "BUENOS AIRES", "CATAMARCA", "CHACO", "CHUBUT", "CÓRDOBA",
+    "CORRIENTES", "ENTRE RÍOS", "FORMOSA", "JUJUY", "LA PAMPA", "LA RIOJA",
+    "MENDOZA", "MISIONES", "NEUQUÉN", "RÍO NEGRO", "SALTA", "SAN JUAN",
+    "SAN LUIS", "SANTA CRUZ", "SANTA FE", "SANTIAGO DEL ESTERO",
+    "TIERRA DEL FUEGO", "TUCUMÁN"
+];
+
+function llenarProvincias(sel) {
+    if (!sel) return;
+    const placeholder = sel.querySelector('option[value=""]');
+    sel.replaceChildren();
+    if (placeholder) sel.appendChild(placeholder);
+    PROVINCIAS.forEach(p => {
+        const o = document.createElement('option');
+        o.value = p; o.textContent = p;
+        sel.appendChild(o);
+    });
+}
+
 const titulos = ["", "Paso 1: Lugar y Fecha", "Paso 2: Conductor", "Paso 3: Daños y Relato", "Paso 4: El Tercero", "Paso 5: Fotos"];
 
 // Headers comunes para llamadas a Supabase (REST y RPC)
@@ -85,6 +108,90 @@ function setVal(id, text) {
     if (el) el.innerText = text || "";
 }
 
+// Texto para meter dentro de innerHTML sin que se interprete como HTML
+function escHTML(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Mensaje legible de cualquier error. No todos son Error: EmailJS rechaza con
+// un objeto {status, text} sin .message, y el cartel terminaba diciendo
+// "falló un paso posterior: undefined".
+function textoError(e) {
+    if (!e) return 'Error desconocido.';
+    if (e.message) return e.message;
+    if (e.text !== undefined) {
+        return `No se pudo enviar el mail de aviso (${e.text || 'sin detalle'}${e.status ? ', código ' + e.status : ''}).`;
+    }
+    return String(e);
+}
+
+// Fecha de hoy YYYY-MM-DD en hora LOCAL, para el max de los <input type=date>.
+// toISOString() da la fecha UTC: despues de las 21 hs de Argentina ya es
+// "mañana" y el calendario dejaba elegir una fecha futura.
+function hoyISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Nombre legible de cada categoria de archivo, para el listado del PDF.
+// En la base y en el bucket se sigue usando la clave corta (propios_1).
+const ETIQUETAS_FOTO = {
+    propios: 'Daños propios', tercero: 'Daños tercero',
+    doc_cond: 'Doc. conductor', doc_terc: 'Doc. tercero',
+    otros: 'Otras', policial: 'Denuncia policial',
+    foto: 'Foto', archivo: 'Archivo'
+};
+function etiquetaFoto(label) {
+    const m = String(label || '').match(/^(.*)_(\d+)$/);
+    if (!m) return label || '';
+    return `${ETIQUETAS_FOTO[m[1]] || m[1]} ${m[2]}`;
+}
+// Calidad JPEG de las paginas del PDF. html2pdf usa 0.95 por defecto y la
+// denuncia salia de ~600 KB; con 0.8 queda en ~400 KB y el texto se lee igual.
+const PDF_IMAGEN = { type: 'jpeg', quality: 0.8 };
+
+// Si una hoja se estira (ver ajustarHojaPDF), los renglones de tablas y los
+// bloques marcados pasan enteros a la hoja siguiente en vez de partirse.
+const PDF_CORTES = { mode: ['css'], avoid: ['tr', '.pdf-no-cortar'] };
+
+// ============================================================================
+// PDF: QUE NO SE PIERDA EL FINAL DE LA HOJA
+// Cada hoja del template tiene alto fijo (una A4). Con un relato largo (hasta
+// 1000 caracteres) y varios lesionados, la hoja 2 se pasaba de largo y lo que
+// sobraba (la firma y la aclaracion) quedaba afuera del PDF sin ningun aviso.
+// Primero se achica la letra del relato; si igual no entra, la hoja se estira
+// y el sobrante pasa a una hoja mas.
+// ============================================================================
+function ajustarHojaPDF(hoja, relato) {
+    if (!hoja) return;
+    // Volver al estado original: el template se reusa en un reintento
+    if (!hoja.dataset.alto) hoja.dataset.alto = hoja.style.height;
+    hoja.style.height = hoja.dataset.alto;
+    hoja.style.minHeight = '';
+    if (relato) {
+        if (!relato.dataset.letra) relato.dataset.letra = relato.style.fontSize;
+        relato.style.fontSize = relato.dataset.letra;
+    }
+    const sobra = () => hoja.scrollHeight - hoja.clientHeight > 1;
+    if (!sobra()) return;
+    if (relato) {
+        for (const pt of [8.5, 8, 7.5]) {
+            relato.style.fontSize = pt + 'pt';
+            if (!sobra()) return;
+        }
+    }
+    hoja.style.minHeight = hoja.dataset.alto;
+    hoja.style.height = 'auto';
+}
+
+function listaFotosPDF(links) {
+    return links.map(l =>
+        `<a href="${escHTML(l.url)}" target="_blank" style="text-decoration:none; color:#444; margin-right:15px;">• ${escHTML(etiquetaFoto(l.label))}</a>`
+    ).join(' ');
+}
+
 // ============================================================================
 // FECHAS
 // Los <input type="date"> devuelven ISO ("2026-08-04") y toLocaleDateString()
@@ -112,6 +219,17 @@ function fechaAR(valor) {
 // Listar el contenido de la carpeta no es posible: el bucket no tiene policy
 // de SELECT para anon, solo de INSERT.
 // ============================================================================
+
+// Nombre de carpeta en el bucket: empieza por el numero de denuncia con ceros
+// adelante (SN00012_AB996JE) para que el panel de Storage, que ordena por
+// nombre, las muestre en orden de carga y no por patente.
+// Las RPC que listan archivos sacan la carpeta del link del PDF, asi que las
+// carpetas viejas (AB996JE_SN12) siguen funcionando.
+function carpetaDenuncia(nro, sufijo) {
+    const n = String(nro || '').replace(/\D/g, '');
+    return `SN${n.padStart(5, '0')}_${sufijo}`;
+}
+
 // ============================================================================
 // COMPRESION DE FOTOS
 // Una foto de celular pesa 3-5 MB. Redimensionada a 1600px de lado mayor queda
@@ -266,8 +384,96 @@ function hoyAR() {
     return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
+// ============================================================================
+// ADJUNTOS ACUMULABLES
+// Un <input type=file> reemplaza lo elegido cada vez que se lo toca. En el
+// celular es lo normal sacar una foto, volver, sacar otra: la segunda borraba
+// la primera sin avisar. Ahora cada eleccion se SUMA a las anteriores.
+// Si el navegador no deja armar la lista (DataTransfer), queda el
+// comportamiento de siempre.
+// ============================================================================
+const adjuntosAcumulados = {};   // id del input -> File[]
+
+function initAdjuntos() {
+    document.querySelectorAll('input[type="file"]').forEach(inp => {
+        inp.addEventListener('change', () => {
+            const nuevos = Array.from(inp.files || []);
+            const previos = adjuntosAcumulados[inp.id] || [];
+            if (!nuevos.length) {
+                // Cancelo el selector: se conserva lo que ya habia
+                reponerAdjuntos(inp, previos);
+                return;
+            }
+            const todos = previos.concat(nuevos);
+            if (reponerAdjuntos(inp, todos)) adjuntosAcumulados[inp.id] = todos;
+            else adjuntosAcumulados[inp.id] = nuevos;
+            pintarAdjuntos(inp);
+        });
+    });
+}
+
+// Miniaturas de lo elegido, cada una con su X para sacar ESE archivo
+function pintarAdjuntos(inp) {
+    const grupo = inp.closest('.upload-group');
+    if (!grupo) return;
+    let cont = grupo.querySelector('.adjuntos-lista');
+    if (!cont) {
+        cont = document.createElement('div');
+        cont.className = 'adjuntos-lista';
+        grupo.appendChild(cont);
+    }
+    cont.replaceChildren();
+    const archivos = adjuntosAcumulados[inp.id] || Array.from(inp.files || []);
+    archivos.forEach((f, i) => {
+        const div = document.createElement('div');
+        div.className = 'adjunto-mini';
+        div.title = f.name;
+        if (/^image\//i.test(f.type || '')) {
+            const img = document.createElement('img');
+            const url = URL.createObjectURL(f);
+            img.alt = '';
+            // Ya dibujada, la URL temporal no hace falta
+            img.onload = img.onerror = () => URL.revokeObjectURL(url);
+            img.src = url;
+            div.appendChild(img);
+        } else {
+            const tag = document.createElement('div');
+            tag.className = 'adjunto-pdf';
+            tag.textContent = /pdf$/i.test(f.type || f.name) ? 'PDF' : 'ARCH';
+            div.appendChild(tag);
+        }
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.textContent = '×';
+        x.title = 'Quitar';
+        x.addEventListener('click', () => {
+            const quedan = archivos.filter((_, j) => j !== i);
+            if (!quedan.length) { limpiarAdjunto(inp.id); return; }
+            if (reponerAdjuntos(inp, quedan)) adjuntosAcumulados[inp.id] = quedan;
+            pintarAdjuntos(inp);
+        });
+        div.appendChild(x);
+        cont.appendChild(div);
+    });
+}
+
+function reponerAdjuntos(inp, archivos) {
+    try {
+        const dt = new DataTransfer();
+        archivos.forEach(f => dt.items.add(f));
+        inp.files = dt.files;
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 // FUNCIÓN PARA LIMPIAR ARCHIVOS SELECCIONADOS
-function limpiarAdjunto(id) { document.getElementById(id).value = ""; }
+function limpiarAdjunto(id) {
+    const el = document.getElementById(id);
+    delete adjuntosAcumulados[id];
+    if (el) { el.value = ""; pintarAdjuntos(el); }
+}
 
 function actualizarLocalidades() {
     const prov = document.getElementById('provincia').value;
@@ -290,6 +496,15 @@ function actualizarLocalidades() {
         optOtra.value = "OTRA";
         optOtra.textContent = "--- OTRA / NO FIGURA EN LISTA ---";
         locSelect.appendChild(optOtra);
+    } else if (prov) {
+        // Provincia sin lista: el desplegable no sirve, va directo a mano
+        const optOtra = document.createElement('option');
+        optOtra.value = "OTRA";
+        optOtra.textContent = "Escribir la localidad";
+        locSelect.appendChild(optOtra);
+        locSelect.value = "OTRA";
+        manualInput.classList.remove('hidden');
+        manualInput.required = true;
     }
 }
 
@@ -350,6 +565,242 @@ let envioEnCurso = null;   // { flujo, id, nro, folder, linkPdf, fotos }
 function reiniciarEnvio() { envioEnCurso = null; }
 
 // ============================================================================
+// BORRADOR AUTOMATICO
+// En Android, abrir la camara desde "adjuntar foto" puede hacer que el
+// navegador cierre la pestaña por falta de memoria: al volver, la pagina se
+// recarga y el formulario aparece vacio. Lo cargado se guarda en el telefono
+// (localStorage) y al volver a entrar se ofrece continuar.
+// - Solo denuncias NUEVAS: una ampliacion se retoma abriendola otra vez.
+// - Tambien guarda el envio a medias: si la denuncia ya tiene numero, al
+//   continuar se retoma ESA denuncia en vez de crear otra.
+// - Se borra al terminar bien, al descartarla, o a las 48 hs.
+// - Las fotos elegidas no se pueden guardar: hay que volver a adjuntarlas.
+// ============================================================================
+const CLAVE_BORRADOR = 'barsat_borrador_v1';
+const BORRADOR_VIDA_MS = 48 * 3600 * 1000;
+const PANTALLA_DE_FLUJO = {
+    EXTERNO: 'pantalla-formulario',
+    INTERNO: 'pantalla-formulario-interno',
+    RC: 'pantalla-formulario-rc'
+};
+let borradorActivo = false;   // hay una denuncia nueva en curso que conviene guardar
+let timerBorrador = null;
+let pasoExterno = 1, pasoInterno = 0, pasoRC = 1;
+let croquisBorrador = null;   // dataURL del croquis a repintar al continuar
+
+// Fichas de lesionados tal como estan en pantalla (completas o no)
+function leerFichasLesionados() {
+    const out = [];
+    document.querySelectorAll('#lista-lesionados .lesionado-card').forEach(card => {
+        const o = {};
+        card.querySelectorAll('[data-campo]').forEach(inp => { o[inp.dataset.campo] = inp.value || ''; });
+        out.push(o);
+    });
+    return out;
+}
+
+function guardarBorrador() {
+    clearTimeout(timerBorrador);
+    if (!borradorActivo || modoAmpliacion || ampliandoRV) return;
+    const pantalla = document.getElementById(PANTALLA_DE_FLUJO[flujoActivo]);
+    if (!pantalla || pantalla.classList.contains('hidden')) return;
+
+    const campos = {};
+    let hayTexto = false;
+    pantalla.querySelectorAll('input[id], textarea[id], select[id]').forEach(el => {
+        if (el.type === 'file' || el.type === 'password') return;
+        campos[el.id] = el.value;
+        if (el.tagName !== 'SELECT' && el.value.trim()) hayTexto = true;
+    });
+    // Un formulario recien abierto, sin nada escrito, no se guarda
+    if (!hayTexto && !envioEnCurso) return;
+
+    const b = {
+        v: 1, t: Date.now(), flujo: flujoActivo,
+        paso: flujoActivo === 'EXTERNO' ? pasoExterno : flujoActivo === 'INTERNO' ? pasoInterno : pasoRC,
+        campos,
+        unidad, datosEmpresa,
+        unidad2: (typeof unidad2 !== 'undefined') ? unidad2 : null,
+        vinculoDatos, choferEncontrado, choferInterno, choferRC,
+        lesionados: flujoActivo === 'EXTERNO' ? leerFichasLesionados() : [],
+        croquis: (flujoActivo === 'EXTERNO' && croquisCanvas && croquisFueUsado && !croquisPrevioPendiente)
+            ? croquisCanvas.toDataURL('image/png')
+            : (croquisBorrador || null),
+        envio: (envioEnCurso && envioEnCurso.id) ? {
+            flujo: envioEnCurso.flujo, id: envioEnCurso.id, nro: envioEnCurso.nro,
+            folder: envioEnCurso.folder || null, fotos: envioEnCurso.fotos || null
+        } : null
+    };
+    try { localStorage.setItem(CLAVE_BORRADOR, JSON.stringify(b)); } catch { /* sin espacio o bloqueado: sigue sin borrador */ }
+}
+
+// Mientras se escribe se guarda con una pequeña demora; al salir de la
+// pestaña (camara, otra app) se guarda en el acto.
+function programarBorrador() {
+    clearTimeout(timerBorrador);
+    timerBorrador = setTimeout(guardarBorrador, 700);
+}
+
+function leerBorrador() {
+    try {
+        const b = JSON.parse(localStorage.getItem(CLAVE_BORRADOR) || 'null');
+        if (!b || b.v !== 1 || !PANTALLA_DE_FLUJO[b.flujo]) return null;
+        if (Date.now() - (b.t || 0) > BORRADOR_VIDA_MS) { borrarBorrador(); return null; }
+        return b;
+    } catch {
+        return null;
+    }
+}
+
+function borrarBorrador() {
+    clearTimeout(timerBorrador);
+    try { localStorage.removeItem(CLAVE_BORRADOR); } catch {}
+}
+
+function initBorrador() {
+    document.addEventListener('input', programarBorrador, true);
+    document.addEventListener('change', programarBorrador, true);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') guardarBorrador();
+    });
+    window.addEventListener('pagehide', guardarBorrador);
+    mostrarAvisoBorrador();
+}
+
+function mostrarAvisoBorrador() {
+    const caja = document.getElementById('aviso-borrador');
+    const b = leerBorrador();
+    if (!caja) return;
+    if (!b) { caja.classList.add('hidden'); return; }
+    const tipos = { EXTERNO: 'Denuncia con tercero', INTERNO: 'Constancia interna', RC: 'Riesgos Varios' };
+    const totales = { EXTERNO: 5, INTERNO: 3, RC: 2 };
+    const pasoVisible = b.flujo === 'INTERNO' ? (b.paso || 0) + 1 : (b.paso || 1);
+    const min = Math.max(1, Math.round((Date.now() - b.t) / 60000));
+    const hace = min < 60 ? `hace ${min} min` : `hace ${Math.round(min / 60)} h`;
+    const partes = [tipos[b.flujo]];
+    if (b.unidad && b.unidad.DOMINIO) partes.push(b.unidad.DOMINIO);
+    partes.push(`paso ${pasoVisible} de ${totales[b.flujo]}`, hace);
+    let txt = 'Tenés una denuncia sin terminar: ' + partes.join(' · ') + '.';
+    if (b.envio && b.envio.nro) {
+        txt += ` Ya tiene número ${b.envio.nro}: falta terminar el envío.`;
+    }
+    document.getElementById('aviso-borrador-texto').textContent = txt;
+    caja.classList.remove('hidden');
+}
+
+function descartarBorrador() {
+    const b = leerBorrador();
+    if (b && b.envio && b.envio.nro) {
+        const ok = confirm(`La denuncia ${b.envio.nro} ya está guardada pero sin PDF. `
+            + 'Si la descartás queda incompleta y la tiene que revisar administración. ¿Descartar igual?');
+        if (!ok) return;
+    }
+    borrarBorrador();
+    mostrarAvisoBorrador();
+}
+
+function restaurarBorrador() {
+    const b = leerBorrador();
+    if (!b) { mostrarAvisoBorrador(); return; }
+    document.getElementById('aviso-borrador').classList.add('hidden');
+
+    const c = b.campos || {};
+    const set = (id) => {
+        const el = document.getElementById(id);
+        if (el && c[id] !== undefined) el.value = c[id];
+    };
+    const setTodos = (excepto) => Object.keys(c).forEach(id => { if (!excepto.includes(id)) set(id); });
+    const digitos = (s) => String(s || '').replace(/\D/g, '');
+
+    unidad = b.unidad || {};
+    datosEmpresa = b.datosEmpresa || {};
+    pintarUnidadValidada();
+    // Los iniciarFlujo* esperan venir del selector: la inicial se oculta aca
+    ['pantalla-validacion', 'pantalla-seleccion'].forEach(id =>
+        document.getElementById(id).classList.add('hidden'));
+
+    if (b.flujo === 'EXTERNO') {
+        iniciarFlujoExterno();
+        // La provincia primero: repuebla el desplegable de localidades
+        set('provincia');
+        actualizarLocalidades();
+        setTodos(['provincia']);
+        const loc = document.getElementById('localidad');
+        const manual = document.getElementById('manual_localidad');
+        if (loc && manual && loc.value === 'OTRA') { manual.classList.remove('hidden'); manual.required = true; }
+        document.getElementById('datos_propietario').classList.toggle('hidden', c.es_propietario !== 'NO');
+        actualizarPolicia();
+        set('dependencia_tipo'); set('dependencia_nro');
+        actualizarVinculo();
+        vinculoDatos = b.vinculoDatos || null;
+        if (vinculoDatos && vinculoDatos.dominio) {
+            set('vinculo_dominio');
+            statusVinculo(`${vinculoDatos.dominio} — Póliza ${vinculoDatos.poliza || 'no registrada'}`, 'ok');
+        }
+        choferEncontrado = b.choferEncontrado || null;
+        ultimoDniBuscado = digitos(c.dni_chofer);
+        if ((c.dni_chofer || '').trim() || (c.nombre_chofer || '').trim()) mostrarDatosConductor(true);
+
+        const lista = document.getElementById('lista-lesionados');
+        if (lista) { lista.innerHTML = ''; contadorLesionados = 0; }
+        const hayLes = c.hubo_lesionados === 'SI';
+        document.getElementById('bloque-lesionados').classList.toggle('hidden', !hayLes);
+        if (hayLes) {
+            (b.lesionados || []).forEach(l => agregarLesionado(l));
+            if (lista && !lista.children.length) agregarLesionado();
+        }
+
+        // El croquis se repinta ya, aunque se continue en el paso 4 o 5:
+        // si no, el PDF saldria sin croquis.
+        croquisBorrador = b.croquis || null;
+        iniciarCroquis();
+        cambiarPaso(Math.min(Math.max(b.paso || 1, 1), 5));
+
+    } else if (b.flujo === 'INTERNO') {
+        iniciarFlujoInterno();
+        set('i_tipo_afectado');
+        actualizarTipoAfectado();          // vacia dominio/bien segun el tipo
+        setTodos(['i_tipo_afectado']);
+        actualizarVisibilidadMonto();
+        set('i_presup_monto');
+        unidad2 = b.unidad2 || {};
+        choferInterno = b.choferInterno || null;
+        ultimoDniInterno = digitos(c.i_dni_chofer);
+        let paso = Math.min(Math.max(b.paso || 0, 0), 2);
+        // Contra otra unidad sin la unidad validada: se vuelve a validar
+        if (paso >= 1 && c.i_tipo_afectado !== 'BIEN' && !(unidad2 && unidad2.DOMINIO)) paso = 0;
+        if (paso >= 1) pintarResumenUnidades();
+        cambiarPasoInterno(paso);
+
+    } else {
+        iniciarFlujoRC();
+        setTodos([]);
+        actualizarPoliciaRV();
+        set('rc_dependencia_tipo'); set('rc_dependencia_nro');
+        choferRC = b.choferRC || null;
+        ultimoDniRC = digitos(c.rc_dni_chofer);
+        mostrarCamposChoferRV(true);
+        cambiarPasoRC(Math.min(Math.max(b.paso || 1, 1), 2));
+    }
+
+    // Envio a medias: se retoma la misma denuncia, no se crea otra
+    if (b.envio && b.envio.id && b.envio.flujo === b.flujo) {
+        envioEnCurso = Object.assign({ linkPdf: null }, b.envio);
+        nroSiniestroFinal = b.envio.nro;
+        const idBtn = { EXTERNO: 'btn-finalizar', INTERNO: 'btn-finalizar-int', RC: 'btn-finalizar-rc' }[b.flujo];
+        const btn = document.getElementById(idBtn);
+        if (btn) btn.innerText = 'Reintentar envío';
+        showStatus(`La denuncia ${b.envio.nro} ya quedó guardada, pero el envío no terminó. `
+            + (b.envio.fotos ? 'Las fotos ya se habían subido. ' : 'Volvé a adjuntar las fotos. ')
+            + 'Andá al último paso y tocá "Reintentar envío".', 'error');
+    } else {
+        const aviso = 'Recuperamos lo que habías cargado. Si habías elegido fotos, volvé a adjuntarlas.';
+        showStatus(aviso, 'success');
+    }
+    guardarBorrador();
+}
+
+// ============================================================================
 // DESCARGA DEL PDF AL TERMINAR
 // El PDF se genera en el celular antes de subirlo, asi que se puede ofrecer la
 // descarga en el acto. Sirve para imprimirlo y que el chofer lo firme, y de
@@ -368,6 +819,10 @@ const TODAS_LAS_PANTALLAS = [
 ];
 
 function mostrarPantallaExito(titulo, nro, blob, nombreArchivo) {
+    // Terminada: el borrador del telefono ya no hace falta. Una ampliacion no
+    // lo toca (no es suya: puede ser de otra denuncia que quedo a medias).
+    if (!modoAmpliacion && !ampliandoRV) borrarBorrador();
+    borradorActivo = false;
     pdfParaDescargar = blob ? { blob, nombre: nombreArchivo || 'Denuncia.pdf' } : null;
     TODAS_LAS_PANTALLAS.forEach(id => {
         const el = document.getElementById(id);
@@ -652,6 +1107,22 @@ function mostrarDatosConductor(mostrar) {
     // El atajo de carga manual solo tiene sentido mientras esta oculto
     const manual = document.getElementById('btn-cargar-manual');
     if (manual) manual.classList.toggle('hidden', !!mostrar);
+}
+
+// "No tengo el DNI": el DNI sigue siendo obligatorio, asi que se completa
+// NO INFORMA. Antes se abrian los campos pero el Siguiente rebotaba en el DNI
+// vacio y el chofer no entendia por que.
+function cargarConductorManual() {
+    const dni = document.getElementById('dni_chofer');
+    if (dni && !dni.value.trim()) {
+        dni.value = 'NO INFORMA';
+        dni.style.borderColor = '#ddd';
+        ultimoDniBuscado = '';
+    }
+    statusDni('Sin DNI: completá los datos del conductor a mano.', 'aviso');
+    mostrarDatosConductor(true);
+    const nom = document.getElementById('nombre_chofer');
+    if (nom) nom.focus();
 }
 
 function resetearPaso2() {
@@ -953,6 +1424,7 @@ function finalizarTrazo() {
     if (!croquisDibujando) return;
     croquisDibujando = false;
     guardarEstadoCroquis();
+    programarBorrador();
 }
 
 function deshacerCroquis() {
@@ -961,6 +1433,7 @@ function deshacerCroquis() {
     const previo = croquisHistorial[croquisHistorial.length - 1];
     croquisCtx.putImageData(previo, 0, 0);
     if (croquisHistorial.length === 1) croquisFueUsado = false;
+    programarBorrador();
 }
 
 function limpiarCroquis() {
@@ -976,6 +1449,21 @@ function limpiarCroquis() {
     croquisCtx.lineWidth = 6;
     croquisCtx.lineCap = 'round';
     croquisCtx.lineJoin = 'round';
+    programarBorrador();
+}
+
+// Repinta el croquis guardado en el borrador (dataURL: no hay CORS que evitar)
+function pintarCroquisBorrador(src) {
+    const img = new Image();
+    img.onload = () => {
+        if (!croquisCtx) return;
+        croquisCtx.drawImage(img, 0, 0, CROQUIS_SIZE, CROQUIS_SIZE);
+        guardarEstadoCroquis();
+        croquisFueUsado = true;
+        croquisBorrador = null;
+    };
+    img.onerror = () => { croquisBorrador = null; };
+    img.src = src;
 }
 
 function iniciarCroquis() {
@@ -1011,6 +1499,9 @@ function iniciarCroquis() {
             msg.innerText = 'Recuperando el croquis de la denuncia original...';
         }
         cargarCroquisPrevio(croquisUrlPrevio);
+    } else if (croquisBorrador) {
+        // Denuncia recuperada del borrador automatico
+        pintarCroquisBorrador(croquisBorrador);
     }
 
     // Estilo del trazo del usuario
@@ -1057,6 +1548,7 @@ function resetearCroquis() {
     croquisUrlPrevio = null;
     croquisPrevioPendiente = false;
     croquisPrevioDescarga = null;
+    croquisBorrador = null;
 }
 
 // Carga la imagen del croquis previo sobre el canvas actual. Hacemos fetch como
@@ -1109,8 +1601,19 @@ async function cargarCroquisPrevio(url) {
 }
 
 window.onload = function() {
-    const hoy = new Date().toISOString().split('T')[0];
-    document.getElementById('fecha_hecho').setAttribute('max', hoy);
+    document.getElementById('fecha_hecho').setAttribute('max', hoyISO());
+    llenarProvincias(document.getElementById('provincia'));
+    llenarProvincias(document.getElementById('rc_provincia'));
+    initAdjuntos();
+    initBorrador();
+    // Dominio: mayusculas y solo letras y numeros. Si el chofer escribia
+    // "AB 123 CD" o "ab-123-cd", el maxlength cortaba y no encontraba la unidad.
+    const inpPat = document.getElementById('patente');
+    if (inpPat) {
+        inpPat.addEventListener('input', () => {
+            inpPat.value = inpPat.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        });
+    }
     emailjs.init(EMAILJS_PUBLIC_KEY);
     ['dni_chofer', 'tel_chofer', 'prop_dni', 'prop_tel', 'cp', 'cp_chofer'].forEach(aplicarValidacionEstricta);
     initAutocompletadoChofer();
@@ -1209,7 +1712,12 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
     const btn = e.target.querySelector('button');
     btn.innerText = "Buscando..."; btn.disabled = true;
     limpiarStatus();   // borra el error del intento anterior
-    const patente = document.getElementById('patente').value.trim().toUpperCase();
+    const patente = document.getElementById('patente').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!patente) {
+        showStatus("Escribí el dominio del vehículo.", "error");
+        btn.innerText = "Validar Unidad"; btn.disabled = false;
+        return;
+    }
 
     try {
         // Mandamos p_chasis_suffix explicito ('') para evitar que PostgREST
@@ -1225,6 +1733,7 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
         datosEmpresa = data.empresa || {};
         // Ya no se pide chasis al usuario; las RPCs lo aceptan como opcional.
         unidad.__chasis_suffix = '';
+        pintarUnidadValidada();
 
         const siniestrosPrevios = data.siniestros_previos || [];
 
@@ -1239,6 +1748,25 @@ document.getElementById('form-validacion').addEventListener('submit', async (e) 
         btn.innerText = "Validar Unidad"; btn.disabled = false;
     }
 });
+
+// Confirmacion de la unidad encontrada, arriba de las pantallas que siguen.
+// Asi el chofer ve enseguida si escribio mal la patente y cayo en otro camion.
+function pintarUnidadValidada() {
+    const tipos = { TRACTOR: 'Tractor', SEMI: 'Semirremolque', CHASIS: 'Chasis' };
+    const partes = [
+        unidad.MODELO,
+        tipos[String(unidad.TIPO_UNIDAD || '').toUpperCase()],
+        datosEmpresa.nombre_clave || unidad.RAZON_SOCIAL
+    ].filter(Boolean);
+    document.querySelectorAll('.unidad-validada').forEach(el => {
+        el.replaceChildren();
+        const b = document.createElement('b');
+        b.textContent = unidad.DOMINIO || '';
+        el.appendChild(b);
+        if (partes.length) el.appendChild(document.createTextNode(' · ' + partes.join(' · ')));
+        el.classList.toggle('hidden', !unidad.DOMINIO);
+    });
+}
 
 // Render de la pantalla intermedia. Las denuncias del mismo dia se muestran
 // con un boton "Ampliar"; las demas solo como referencia. Si hay mas de 3,
@@ -1374,10 +1902,7 @@ function iniciarFlujoExterno() {
     actualizarPolicia();
 
     // Archivos elegidos en el paso 5
-    CATEGORIAS_FOTO.forEach(c => {
-        const f = document.getElementById(`f_${c}`);
-        if (f) f.value = '';
-    });
+    CATEGORIAS_FOTO.forEach(c => limpiarAdjunto(`f_${c}`));
 
     // Reset de lesionados
     const selLes = document.getElementById('hubo_lesionados');
@@ -1393,6 +1918,7 @@ function iniciarFlujoExterno() {
     document.getElementById('pantalla-tipo-siniestro').classList.add('hidden');
     document.getElementById('pantalla-formulario-interno').classList.add('hidden');
     document.getElementById('pantalla-formulario').classList.remove('hidden');
+    borradorActivo = true;
     cambiarPaso(1);
 }
 
@@ -1405,7 +1931,7 @@ function iniciarFlujoInterno() {
     document.getElementById('pantalla-formulario').classList.add('hidden');
     document.getElementById('pantalla-formulario-interno').classList.remove('hidden');
     // Inicializa max fecha y status del patente2 cada vez por si quedo de un intento anterior
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = hoyISO();
     const f = document.getElementById('i_fecha');
     if (f) f.setAttribute('max', hoy);
     const st = document.getElementById('i_patente2_status');
@@ -1424,13 +1950,14 @@ function iniciarFlujoInterno() {
     reiniciarEnvio();
     // Reset completo de los campos del interno
     ['i_patente2', 'i_bien_afectado', 'i_lugar', 'i_fecha', 'i_hora', 'i_dni_chofer',
-     'i_nombre_chofer', 'i_tel_chofer', 'i_relato', 'i_presup_monto', 'i_fotos'].forEach(id => {
+     'i_nombre_chofer', 'i_tel_chofer', 'i_relato', 'i_presup_monto'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.value = '';
         el.style.borderColor = '#ddd';
         el.classList.remove('autocompletado');
     });
+    limpiarAdjunto('i_fotos');
     ['i_nombre_chofer', 'i_tel_chofer'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.remove('hidden');
@@ -1438,6 +1965,7 @@ function iniciarFlujoInterno() {
     const btnT = document.getElementById('btn-pasar-a-tercero');
     if (btnT) btnT.classList.add('hidden');
     congelarFormulario('pantalla-formulario-interno', false);
+    borradorActivo = true;
     cambiarPasoInterno(0);
 }
 
@@ -1568,6 +2096,7 @@ async function iniciarAmpliacion(idx) {
     }
 
     modoAmpliacion = { id: s.id, nro_siniestro: s.nro_siniestro };
+    borradorActivo = false;   // las ampliaciones no van al borrador automatico
     limpiarStatus();
     fotosViejasMantenidas = [];
     limpiarPreviewsFotosViejas();
@@ -1705,8 +2234,10 @@ function agregarLesionado(datos) {
             if (sel) sel.value = 'NO';
             actualizarLesionados();
         }
+        programarBorrador();
     });
     lista.appendChild(card);
+    programarBorrador();
 }
 
 function renumerarLesionados() {
@@ -1812,6 +2343,12 @@ function precargarFormulario(s) {
     // quedan sin marca de "autocompletado" asi la busqueda por DNI no los pisa,
     // y se muestran directamente porque ya vienen llenos.
     limpiarAutocompletado();
+    // limpiarAutocompletado() deja choferEncontrado en null, y el payload de la
+    // ampliacion toma legajo y operacion de ahi: toda ampliacion borraba en la
+    // base el legajo y la operacion del chofer. Se reponen los guardados.
+    choferEncontrado = (s.legajo_chofer || s.op_chofer)
+        ? { legajo: s.legajo_chofer || '', op: s.op_chofer || '' }
+        : null;
     mostrarDatosConductor(true);
     ultimoDniBuscado = String(s.dni_chofer || '').replace(/\D/g, '');
 
@@ -1863,6 +2400,8 @@ function cambiarPaso(paso) {
     if (paso >= 1 && paso <= 4) { msg.style.display = 'block'; }
     else { msg.style.display = 'none'; }
     if (paso === 3) iniciarCroquis();
+    pasoExterno = paso;
+    programarBorrador();
     window.scrollTo(0,0);
 }
 
@@ -2045,7 +2584,7 @@ async function enviarSiniestro() {
         // ---- 2. Carpeta con el numero de siniestro ----
         // En una ampliacion los archivos van a una subcarpeta para no chocar
         // con los nombres de la carga original (el bucket no permite sobrescribir).
-        const carpetaBase = `${unidad.DOMINIO}_${nroSiniestroFinal}`;
+        const carpetaBase = carpetaDenuncia(nroSiniestroFinal, unidad.DOMINIO);
         // La subcarpeta de ampliacion se fija en el primer intento y se reusa,
         // para que un reintento no genere una segunda carpeta con la mitad.
         if (!envioEnCurso.folder) {
@@ -2054,6 +2593,9 @@ async function enviarSiniestro() {
                 : carpetaBase;
         }
         const folder = envioEnCurso.folder;
+        // Si el telefono cierra la pestaña de aca en adelante, al volver se
+        // retoma esta misma denuncia (ver BORRADOR AUTOMATICO)
+        guardarBorrador();
         const pdfPath = `${folder}/Denuncia_Final_${tokenArchivo()}.pdf`;
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
 
@@ -2108,6 +2650,7 @@ async function enviarSiniestro() {
                 }
             }
             envioEnCurso.fotos = links;
+            guardarBorrador();
         }
         btn.innerText = "Enviando...";
 
@@ -2157,6 +2700,11 @@ async function enviarSiniestro() {
         let marcaFinal = (m.includes("MERCEDES") || m.includes("BENZ")) ? "MERCEDES BENZ" : (m.includes("CITROEN") ? "CITROEN" : m.split(' ')[0]);
         setVal('p-v-ma', marcaFinal); setVal('p-v-mo', m);
         setVal('p-v-do', unidad.DOMINIO); setVal('p-v-anio', unidad.ANIO);
+        // "Tipo" salia siempre vacio: no se llenaba nunca
+        const tipoU = String(unidad.TIPO_UNIDAD || '').toUpperCase();
+        setVal('p-v-ti', tipoU === 'TRACTOR' ? 'TRACTOR'
+            : tipoU === 'SEMI' ? 'SEMIRREMOLQUE'
+            : (unidad.VEHICULO && unidad.VEHICULO !== 'SOCIOS') ? unidad.VEHICULO : '');
         setVal('p-v-mot', unidad.MOTOR); setVal('p-v-cha', unidad.CHASIS);
         setVal('p-v-dan', val('danos_propios'));
         // El relato del PDF lleva arriba la linea de la unidad vinculada
@@ -2184,8 +2732,10 @@ async function enviarSiniestro() {
         // los del propietario que se cargaron aparte.
         setVal('p-t-p-no', esProp ? val('nombre_cond_tercero') : val('prop_nombre'));
         setVal('p-t-p-dn', esProp ? val('dni_cond_tercero')    : val('prop_dni'));
+        // El formulario pide "Marca y Modelo" en un solo campo: antes se
+        // imprimia dos veces, una como Marca y otra como Modelo.
         setVal('p-t-ma', val('marca_tercero'));
-        setVal('p-t-mo', val('marca_tercero')); setVal('p-t-do', val('patente_tercero'));
+        setVal('p-t-do', val('patente_tercero'));
         setVal('p-t-se', val('seguro_tercero')); setVal('p-t-po', val('poliza_tercero'));
         setVal('p-t-dan', val('danos_tercero'));
 
@@ -2249,7 +2799,7 @@ async function enviarSiniestro() {
         const fotoContainer = document.getElementById('p-lista-fotos');
         if (fotoContainer) {
             fotoContainer.innerHTML = links.length
-                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:15px;">• ${l.label}</a>`).join(' ')
+                ? listaFotosPDF(links)
                 : '<span style="color:#666;">Sin fotos adjuntas.</span>';
         }
 
@@ -2261,7 +2811,8 @@ async function enviarSiniestro() {
 
         // ---- 5. Generar y subir PDF ----
         await new Promise(r => setTimeout(r, 1200));
-        const opt = { margin: 0, filename: `Denuncia_${unidad.DOMINIO}.pdf`, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+        ajustarHojaPDF(document.getElementById('pdf-hoja-2'), document.getElementById('p-relato'));
+        const opt = { margin: 0, filename: `Denuncia_${unidad.DOMINIO}.pdf`, image: PDF_IMAGEN, pagebreak: PDF_CORTES, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
         const pdfBlob = await html2pdf().set(opt).from(document.getElementById('pdf-template')).output('blob');
 
         // Sanity check: el blob debe tener bytes
@@ -2302,7 +2853,7 @@ async function enviarSiniestro() {
             if (intento < 2) await new Promise(r => setTimeout(r, 1000));
         }
         if (!pdfOk) {
-            throw new Error("Se cargó la denuncia pero falló al subir el PDF (" + ultimoError + "). Contactar administración.");
+            throw new Error("No se pudo subir el PDF (" + ultimoError + "). Revisá la señal.");
         }
         // ---- 6. Guardar en la denuncia los links del PDF y del croquis ----
         // Como la denuncia se creo antes de subir los archivos, estos dos campos
@@ -2355,8 +2906,8 @@ async function enviarSiniestro() {
         const yaCreada = envioEnCurso && envioEnCurso.id;
         showStatus(yaCreada
             ? `La denuncia ${envioEnCurso.nro} YA quedó guardada, pero falló un paso posterior: `
-              + e.message + ' Podés reintentar: se retoma la misma denuncia, no se crea otra.'
-            : "ERROR: " + e.message + ' La denuncia NO se guardó.',
+              + textoError(e) + ' Podés reintentar: se retoma la misma denuncia, no se crea otra.'
+            : "ERROR: " + textoError(e) + ' La denuncia NO se guardó.',
             "error");
         btn.disabled = false;
         btn.innerText = yaCreada ? "Reintentar envío" : "Finalizar Denuncia";
@@ -2385,6 +2936,8 @@ function cambiarPasoInterno(paso) {
     document.getElementById('progress-int').style.width = Math.round(((paso + 1) / 3) * 100) + "%";
     document.getElementById('titulo-paso-int').innerText = TITULOS_INTERNO[paso] || '';
     document.getElementById('indicador-paso-int').innerText = `Paso ${paso + 1} de 3`;
+    pasoInterno = paso;
+    programarBorrador();
     window.scrollTo(0, 0);
 }
 
@@ -2770,15 +3323,14 @@ function iniciarFlujoRC() {
     const selA = document.getElementById('rc_autoridad');
     if (selA) selA.value = 'NO';
     actualizarPoliciaRV();
-    const f = document.getElementById('rc_fotos');
-    if (f) f.value = '';
+    limpiarAdjunto('rc_fotos');
     archivosRVPrevios = [];
     const boxPrev = document.getElementById('rv-archivos-previos');
     if (boxPrev) boxPrev.classList.add('hidden');
     mostrarCamposChoferRV(true);
     congelarFormulario('pantalla-formulario-rc', false);
 
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = hoyISO();
     const fech = document.getElementById('rc_fecha');
     if (fech) fech.setAttribute('max', hoy);
 
@@ -2788,6 +3340,7 @@ function iniciarFlujoRC() {
     document.getElementById('pantalla-formulario').classList.add('hidden');
     document.getElementById('pantalla-formulario-interno').classList.add('hidden');
     document.getElementById('pantalla-formulario-rc').classList.remove('hidden');
+    borradorActivo = true;
     cambiarPasoRC(1);
 }
 
@@ -2810,6 +3363,8 @@ function cambiarPasoRC(paso) {
     if (tit) tit.innerText = paso === 1 ? 'Paso 1: El hecho' : 'Paso 2: Daños y damnificado';
     const ind = document.getElementById('indicador-paso-rc');
     if (ind) ind.innerText = `Paso ${paso} de 2`;
+    pasoRC = paso;
+    programarBorrador();
     window.scrollTo(0, 0);
 }
 
@@ -2876,7 +3431,11 @@ async function enviarSiniestroRC() {
             const r = await rpc('ampliar_rv', {
                 p_id: ampliandoRV.id, p_clave: claveRV, p_payload: payload
             });
-            if (!r || !r.success) throw new Error("Fallo al ampliar la denuncia.");
+            if (!r || !r.success) {
+                throw new Error(r && r.motivo === 'CLAVE_INCORRECTA'
+                    ? "La clave no es correcta (¿la cambiaron?). Volvé a entrar desde Ampliar."
+                    : "Fallo al ampliar la denuncia.");
+            }
             nroSiniestroFinal = r.nro_siniestro;
             idDenuncia = r.id;
             envioEnCurso = { flujo: 'RC', id: idDenuncia, nro: nroSiniestroFinal };
@@ -2886,13 +3445,14 @@ async function enviarSiniestroRC() {
             nroSiniestroFinal = resultado.nro_siniestro;
             idDenuncia = resultado.id;
             envioEnCurso = { flujo: 'RC', id: idDenuncia, nro: nroSiniestroFinal };
+            guardarBorrador();
         }
 
         // 2. Carpeta con el numero de denuncia. Las ampliaciones van a una
         // subcarpeta para no chocar con los archivos de la carga original.
         const folder = ampliandoRV
-            ? `RV_${nroSiniestroFinal}/ampliacion_${Date.now()}`
-            : `RV_${nroSiniestroFinal}`;
+            ? `${carpetaDenuncia(nroSiniestroFinal, 'RV')}/ampliacion_${Date.now()}`
+            : carpetaDenuncia(nroSiniestroFinal, 'RV');
         const pdfPath = `${folder}/Denuncia_RV_${tokenArchivo()}.pdf`;
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
 
@@ -2916,6 +3476,7 @@ async function enviarSiniestroRC() {
             links.push({ url: `${URL_API}/storage/v1/object/public/denuncias/${path}`, label: `archivo_${yaHabia + i + 1}` });
         }
         envioEnCurso.fotos = links;
+        guardarBorrador();
         btn.innerText = "Enviando...";
 
         // 4. Llenar el template.
@@ -2946,11 +3507,17 @@ async function enviarSiniestroRC() {
         }
         setVal('prc-autoridad', txtAut);
 
+        // (AMPLIACIÓN) en el titulo, igual que en la denuncia con tercero
+        const tagAmpRC = document.getElementById('prc-ampliacion-tag');
+        if (tagAmpRC) tagAmpRC.style.display = ampliandoRV ? 'inline' : 'none';
+
         const dam = document.getElementById('prc-damnificado');
         if (dam) {
-            const n = val('rc_terc_nombre'), d = val('rc_terc_doc');
-            const t = val('rc_terc_tel'),    b = val('rc_terc_bien');
-            const dm = val('rc_terc_dom');
+            // Escapados: van dentro de innerHTML. En una ampliacion vienen de
+            // la base, cargados por cualquiera desde el formulario publico.
+            const n = escHTML(val('rc_terc_nombre')), d = escHTML(val('rc_terc_doc'));
+            const t = escHTML(val('rc_terc_tel')),    b = escHTML(val('rc_terc_bien'));
+            const dm = escHTML(val('rc_terc_dom'));
             dam.innerHTML = (n || d || t || b || dm)
                 ? `<div><b>Nombre / Razón social:</b> ${n || '—'}</div>
                    <div style="display:grid; grid-template-columns:1fr 1fr;">
@@ -2965,7 +3532,7 @@ async function enviarSiniestroRC() {
         const contF = document.getElementById('prc-lista-fotos');
         if (contF) {
             contF.innerHTML = links.length
-                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:15px;">• ${l.label}</a>`).join(' ')
+                ? listaFotosPDF(links)
                 : '<span style="color:#888;">Sin fotos adjuntas.</span>';
         }
 
@@ -2974,9 +3541,11 @@ async function enviarSiniestroRC() {
         const opt = {
             margin: 0,
             filename: `Denuncia_RC_${nroSiniestroFinal}.pdf`,
+            image: PDF_IMAGEN, pagebreak: PDF_CORTES,
             html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
+        ajustarHojaPDF(document.getElementById('pdf-template-rc').firstElementChild, document.getElementById('prc-relato'));
         const pdfBlob = await html2pdf().set(opt)
             .from(document.getElementById('pdf-template-rc')).output('blob');
         if (!pdfBlob || pdfBlob.size === 0) throw new Error("El PDF salió vacío. Contactar administración.");
@@ -3004,7 +3573,7 @@ async function enviarSiniestroRC() {
             }
             if (intento < 2) await new Promise(r => setTimeout(r, 1000));
         }
-        if (!pdfOk) throw new Error("Se cargó la denuncia pero falló al subir el PDF (" + ultimoError + ").");
+        if (!pdfOk) throw new Error("No se pudo subir el PDF (" + ultimoError + "). Revisá la señal.");
 
         // 6. Guardar el link. Si falla, corta: no se anuncia exito con el PDF suelto.
         const cierreRC = await rpc('finalizar_denuncia', {
@@ -3020,13 +3589,16 @@ async function enviarSiniestroRC() {
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
             // OJO: no decir "daño a terceros" a secas, que es como se llama la
             // denuncia normal de camion. Esta es la de Riesgos Varios.
-            asunto: "Denuncia Riesgos Varios - " + nroSiniestroFinal
-                    + " - " + val('rc_nombre_chofer'),
+            // Antes una ampliacion llegaba con el mismo asunto que el alta
+            asunto: (ampliandoRV ? "Ampliacion Riesgos Varios - " : "Denuncia Riesgos Varios - ")
+                    + nroSiniestroFinal + " - " + val('rc_nombre_chofer'),
             link_pdf: linkPdfFinalReal,
             link: linkPdfFinalReal,
             dominio: 'SIN VEHICULO',
+            dominio_nuestro: 'SIN VEHICULO',
             nro_siniestro: nroSiniestroFinal,
-            tipo_envio: 'RC'
+            tipo_envio: ampliandoRV ? 'AMPLIACION RIESGOS VARIOS' : 'RIESGOS VARIOS',
+            aviso_ampliacion: ampliandoRV ? " - AMPLIACION" : ""
         });
 
         const eraAmpliacion = !!ampliandoRV;
@@ -3041,8 +3613,8 @@ async function enviarSiniestroRC() {
         const yaCreada = envioEnCurso && envioEnCurso.id;
         showStatus(yaCreada
             ? `El registro ${envioEnCurso.nro} YA quedó guardado, pero falló un paso posterior: `
-              + e.message + ' Podés reintentar: se retoma el mismo registro.'
-            : "ERROR: " + e.message + ' El registro NO se guardó.', "error");
+              + textoError(e) + ' Podés reintentar: se retoma el mismo registro.'
+            : "ERROR: " + textoError(e) + ' El registro NO se guardó.', "error");
         btn.innerText = yaCreada ? "Reintentar envío" : "Finalizar Denuncia";
         btn.disabled = false;
     }
@@ -3112,10 +3684,11 @@ async function enviarSiniestroInterno() {
             nroSiniestroFinal = resultado.nro_siniestro;
             idDenuncia = resultado.id;
             envioEnCurso = { flujo: 'INTERNO', id: idDenuncia, nro: nroSiniestroFinal };
+            guardarBorrador();
         }
 
         // ---- 2. Carpeta con el numero de constancia ----
-        const folder = `${unidad.DOMINIO}_${nroSiniestroFinal}`;
+        const folder = carpetaDenuncia(nroSiniestroFinal, unidad.DOMINIO);
         const pdfPath = `${folder}/Constancia_Interna_${tokenArchivo()}.pdf`;
         const linkFinal = `${URL_API}/storage/v1/object/public/denuncias/${pdfPath}`;
 
@@ -3138,6 +3711,7 @@ async function enviarSiniestroInterno() {
             });
         }
         envioEnCurso.fotos = links;
+        guardarBorrador();
         btn.innerText = "Enviando...";
 
         // ---- 4. Llenar template PDF interno ----
@@ -3173,7 +3747,7 @@ async function enviarSiniestroInterno() {
         const cont = document.getElementById('pi-lista-fotos');
         if (cont) {
             cont.innerHTML = links.length
-                ? links.map(l => `<a href="${l.url}" target="_blank" style="text-decoration:none; color:#444; margin-right:15px;">• ${l.label}</a>`).join(' ')
+                ? listaFotosPDF(links)
                 : '<span style="color:#888;">Sin fotos adjuntas.</span>';
         }
 
@@ -3182,9 +3756,11 @@ async function enviarSiniestroInterno() {
         const opt = {
             margin: 0,
             filename: `Constancia_Interna_${unidad.DOMINIO}.pdf`,
+            image: PDF_IMAGEN, pagebreak: PDF_CORTES,
             html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
+        ajustarHojaPDF(document.getElementById('pdf-template-interno').firstElementChild, document.getElementById('pi-relato'));
         const pdfBlob = await html2pdf().set(opt).from(document.getElementById('pdf-template-interno')).output('blob');
         if (!pdfBlob || pdfBlob.size === 0) {
             throw new Error("El PDF salió vacío. Contactar administración.");
@@ -3216,7 +3792,7 @@ async function enviarSiniestroInterno() {
             if (intento < 2) await new Promise(r => setTimeout(r, 1000));
         }
         if (!pdfOk) {
-            throw new Error("Se cargó la constancia pero falló al subir el PDF (" + ultimoError + ").");
+            throw new Error("No se pudo subir el PDF (" + ultimoError + "). Revisá la señal.");
         }
         // ---- 6. Guardar el link del PDF en la constancia ----
         const cierreInt = await rpc('finalizar_denuncia', {
@@ -3255,8 +3831,8 @@ async function enviarSiniestroInterno() {
         const yaCreada = envioEnCurso && envioEnCurso.id;
         showStatus(yaCreada
             ? `La constancia ${envioEnCurso.nro} YA quedó guardada, pero falló un paso posterior: `
-              + e.message + ' Podés reintentar: se retoma la misma constancia.'
-            : "ERROR: " + e.message + ' La constancia NO se guardó.', "error");
+              + textoError(e) + ' Podés reintentar: se retoma la misma constancia.'
+            : "ERROR: " + textoError(e) + ' La constancia NO se guardó.', "error");
         btn.disabled = false;
         btn.innerText = yaCreada ? "Reintentar envío" : "Finalizar Constancia";
     }

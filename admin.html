@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel de Control - BARSAT</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Version mayor fija: sin @4, el dia que salga Chart.js 5 el panel se
+         puede romper solo, sin haber tocado nada. -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
@@ -45,6 +47,16 @@
 
         .btn-pdf { background: #d9534f; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
         .btn-pdf:hover { background: #c9302c; }
+        .sin-pdf { color: #9c0006; font-weight: bold; font-size: 11px; }
+        td.nro { font-weight: bold; color: #0056b3; white-space: nowrap; }
+        td.fecha { white-space: nowrap; }
+        @media (max-width: 800px) {
+            body { padding: 8px; }
+            .container { padding: 16px; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .header { flex-direction: column; align-items: flex-start; gap: 10px; }
+            .header-right { flex-wrap: wrap; }
+        }
 
         .chip { display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
         .chip-externo { background: #cfe2ff; color: #084298; }
@@ -100,7 +112,7 @@
                 <canvas id="chartMeses"></canvas>
             </div>
             <div class="chart-container">
-                <h3>Distribución Geográfica (Provincias)</h3>
+                <h3>Denuncias por tipo</h3>
                 <canvas id="chartProvincias"></canvas>
             </div>
         </div>
@@ -126,11 +138,13 @@
             <table id="tablaSiniestros">
                 <thead>
                     <tr>
+                        <th>Nº</th>
                         <th>Tipo</th>
-                        <th>Fecha Hecho</th>
-                        <th>Empresa / Cliente</th>
+                        <th>Fecha hecho</th>
+                        <th>Cargada</th>
+                        <th>Dominio</th>
                         <th>Conductor</th>
-                        <th>Patente Tercero / 2do</th>
+                        <th>Tercero / 2da unidad</th>
                         <th>Provincia / Lugar</th>
                         <th>Presupuesto</th>
                         <th>PDF</th>
@@ -155,6 +169,7 @@
         </div>
     </div>
 
-    <script src="admin.js"></script>
+    <!-- Igual que en index.html: subir el ?v= al cambiar admin.js -->
+    <script src="admin.js?v=2"></script>
 </body>
 </html>

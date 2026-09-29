@@ -1,6 +1,6 @@
 /* style.css - Versión corregida para el formulario profesional */
 body {
-    font-family: 'Segoe UI', Arial, sans-serif;
+    font-family: 'Segoe UI', Roboto, -apple-system, Arial, sans-serif;
     background-color: #f0f2f5;
     margin: 0;
     min-height: 100vh;
@@ -34,6 +34,63 @@ input, textarea, select {
     border-radius: 6px;
     box-sizing: border-box;
     font-size: 15px;
+}
+
+/* Sin esto los textarea (relato, daños) salian en letra monoespaciada y los
+   botones en la tipografia del sistema: todo el formulario con la misma. */
+input, textarea, select, button { font-family: inherit; }
+select { background-color: #fff; color: #222; }
+
+/* Celular: menos margen alrededor. Con 30px de body + 30px de tarjeta, en un
+   telefono de 360px los campos quedaban en 240px de ancho. */
+@media (max-width: 480px) {
+    body { padding: 12px 10px; }
+    .card { padding: 20px 16px; }
+}
+
+/* Aviso de denuncia sin terminar (borrador automatico) */
+.aviso-borrador {
+    background: #fff3cd; border: 1px solid #ffe69c; border-radius: 8px;
+    padding: 12px 14px; margin: 4px 0 18px; text-align: left;
+}
+.aviso-borrador p { margin: 0 0 8px; font-size: 14px; color: #664d03; line-height: 1.4; }
+.aviso-borrador-botones { display: flex; gap: 8px; }
+.aviso-borrador-botones button { margin: 0; padding: 11px; font-size: 15px; }
+.aviso-borrador-botones button:first-child { background: #198754; }
+
+/* Adjuntos: boton de "elegir archivos" con el estilo de la app y miniaturas
+   de lo que ya se eligio, cada una con su X */
+input[type="file"] { background: #fff; font-size: 13px; }
+input[type="file"]::file-selector-button {
+    background: #0056b3; color: #fff; border: none; border-radius: 5px;
+    padding: 8px 12px; margin-right: 10px; font-weight: 600; font-family: inherit; cursor: pointer;
+}
+.adjuntos-lista { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 2px; }
+.adjuntos-lista:empty { display: none; }
+.adjunto-mini {
+    position: relative; width: 52px; height: 52px; border-radius: 5px; overflow: hidden;
+    border: 1px solid #ccc; background: #fff;
+}
+.adjunto-mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.adjunto-mini .adjunto-pdf {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    background: #fdecea; color: #b02a37; font-weight: bold; font-size: 12px;
+}
+.adjunto-mini button {
+    position: absolute; top: 1px; right: 1px; width: 18px; height: 18px; padding: 0; margin: 0;
+    border-radius: 50%; background: rgba(220, 53, 69, 0.92); color: #fff; font-size: 11px; line-height: 18px;
+}
+
+label.mini { font-size: 11px; color: #6c757d; margin: 6px 0 -4px; font-weight: 600; }
+
+.logo-inicio { display: block; height: 56px; width: auto; margin: 0 auto 6px; }
+
+/* Unidad validada: confirma al chofer en que camion esta cargando */
+.unidad-validada {
+    font-size: 13px; color: #084298; background: #eef4fc;
+    border: 1px solid #cfe2ff; border-radius: 6px;
+    padding: 7px 10px; margin: 0 0 12px; text-align: left;
+    overflow-wrap: anywhere;
 }
 
 textarea {

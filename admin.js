@@ -224,10 +224,29 @@ function linkPdfSeguro(valor) {
     }
 }
 
-function celda(texto) {
+function celda(texto, clase) {
     const td = document.createElement('td');
     td.textContent = (texto === null || texto === undefined) ? '' : String(texto);
+    if (clase) td.className = clase;
     return td;
+}
+
+// "2026-09-24" -> "24/09/2026". Los timestamps (created_at) se pasan a hora
+// de Argentina antes de cortar la fecha.
+function fechaAR(valor) {
+    if (!valor) return '';
+    const s = String(valor);
+    if (s.length > 10) {
+        const d = new Date(s);
+        if (!isNaN(d)) {
+            return d.toLocaleDateString('es-AR', {
+                timeZone: 'America/Argentina/Buenos_Aires',
+                day: '2-digit', month: '2-digit', year: 'numeric'
+            });
+        }
+    }
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : s;
 }
 
 function renderTabla(datos) {
@@ -255,14 +274,20 @@ function renderTabla(datos) {
         const lugar = (esInterno || esRC)
             ? (s.calle_interseccion || 'S/D')
             : (s.provincia || 'S/D');
-        const empresa = esInterno ? 'INTERNO'
-                      : esRC      ? 'RIESGOS VARIOS'
-                                  : (s.prop_nombre || 'SIN DATOS');
+        // Antes habia una columna "Empresa / Cliente" que mostraba prop_nombre:
+        // el PROPIETARIO DEL VEHICULO DEL TERCERO, y vacia si el conductor era el
+        // dueño. Se reemplazo por el numero y el dominio, que es lo que se busca.
+        const tercero = esInterno
+            ? (s.patente_tercero || s.bien_afectado || 'S/D')
+            : (s.patente_tercero || 'S/D');
 
-        tr.appendChild(celda(s.fecha_hecho));
-        tr.appendChild(celda(empresa));
+        // La celda Nº va antes del chip de tipo
+        tr.insertBefore(celda(s.nro_siniestro, 'nro'), tdChip);
+        tr.appendChild(celda(fechaAR(s.fecha_hecho), 'fecha'));
+        tr.appendChild(celda(fechaAR(s.created_at), 'fecha'));
+        tr.appendChild(celda(s.dominio_asegurado || (esRC ? '—' : 'S/D')));
         tr.appendChild(celda(s.nombre_chofer));
-        tr.appendChild(celda(s.patente_tercero || 'S/D'));
+        tr.appendChild(celda(tercero));
         tr.appendChild(celda(lugar));
 
         // Presupuesto: monto como texto y la etiqueta en su propio span
@@ -293,7 +318,12 @@ function renderTabla(datos) {
             a.textContent = 'Ver PDF';
             tdPdf.appendChild(a);
         } else {
-            tdPdf.textContent = s.link_pdf ? 'PDF inválido' : 'Sin PDF';
+            // En rojo: una denuncia sin PDF quedo a medias (fallo el envio
+            // despues de crearla) y hay que revisarla.
+            const sp = document.createElement('span');
+            sp.className = 'sin-pdf';
+            sp.textContent = s.link_pdf ? 'PDF inválido' : 'Sin PDF';
+            tdPdf.appendChild(sp);
         }
         tr.appendChild(tdPdf);
 
@@ -309,7 +339,25 @@ function formatPresupuesto(monto, tipo) {
         : 'A presupuestar';
     if (!monto && !tipo) return { texto: '—', etiqueta: '' };
     if (!monto)          return { texto: tipoLabel, etiqueta: '' };
-    return { texto: '$ ' + monto, etiqueta: tipoLabel };
+    // Se guarda normalizado ("1234.5"): se muestra en formato argentino
+    const n = montoANumero(monto);
+    const texto = n ? '$ ' + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    : '$ ' + monto;
+    return { texto, etiqueta: tipoLabel };
+}
+
+// Los montos nuevos se guardan normalizados ("1234.56"). Los viejos pueden
+// venir en formato argentino. Se detecta cual separador es el decimal
+// mirando cual aparece ultimo, en vez de borrar los puntos a ciegas.
+function montoANumero(txt) {
+    const s = String(txt == null ? '' : txt).replace(/[^0-9.,-]/g, '');
+    if (!s) return 0;
+    const c = s.lastIndexOf(','), p = s.lastIndexOf('.');
+    const limpio = (c === -1 && p === -1) ? s
+                 : (c > p) ? s.replace(/\./g, '').replace(',', '.')
+                           : s.replace(/,/g, '');
+    const n = parseFloat(limpio);
+    return isNaN(n) ? 0 : n;
 }
 
 function renderResumenInternos(datos) {
@@ -319,21 +367,8 @@ function renderResumenInternos(datos) {
         box.classList.add('hidden');
         return;
     }
-    // Los montos nuevos se guardan normalizados ("1234.56"). Los viejos pueden
-    // venir en formato argentino. Se detecta cual separador es el decimal
-    // mirando cual aparece ultimo, en vez de borrar los puntos a ciegas.
-    const aNumero = (txt) => {
-        const s = String(txt == null ? '' : txt).replace(/[^0-9.,-]/g, '');
-        if (!s) return 0;
-        const c = s.lastIndexOf(','), p = s.lastIndexOf('.');
-        const limpio = (c === -1 && p === -1) ? s
-                     : (c > p) ? s.replace(/\./g, '').replace(',', '.')
-                               : s.replace(/,/g, '');
-        const n = parseFloat(limpio);
-        return isNaN(n) ? 0 : n;
-    };
-    const total = internos.reduce((acc, s) => acc + aNumero(s.presupuesto_monto), 0);
-    document.getElementById('total-internos').innerText = '$ ' + total.toLocaleString('es-AR');
+    const total = internos.reduce((acc, s) => acc + montoANumero(s.presupuesto_monto), 0);
+    document.getElementById('total-internos').innerText = '$ ' + total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     document.getElementById('cant-internos').innerText = internos.length;
     box.classList.remove('hidden');
 }
@@ -376,9 +411,9 @@ function renderGraficos(datos) {
     const mesesData = {};
     mesesLabels.forEach(m => mesesData[m] = 0);
 
-    // Tercera categoria para lo que no se puede clasificar, en vez de
-    // mandar todo lo desconocido a PROVINCIA.
-    const zonaData = { "CABA": 0, "PROVINCIA": 0, "SIN DATO": 0 };
+    // Torta por tipo de denuncia. Antes era CABA / PROVINCIA, pero internos y
+    // Riesgos Varios no tienen provincia y caian todos en "SIN DATO".
+    const tipoData = { "EXTERNO": 0, "INTERNO": 0, "RC": 0 };
 
     datos.forEach(s => {
         if (s.fecha_hecho) {
@@ -388,14 +423,8 @@ function renderGraficos(datos) {
             }
         }
 
-        const prov = (s.provincia || "").trim().toUpperCase();
-        if (!prov) {
-            zonaData["SIN DATO"]++;
-        } else if (prov.includes("CABA") || prov.includes("CAPITAL")) {
-            zonaData["CABA"]++;
-        } else {
-            zonaData["PROVINCIA"]++;
-        }
+        const t = (s.tipo_siniestro || 'EXTERNO').toUpperCase();
+        if (tipoData.hasOwnProperty(t)) tipoData[t]++;
     });
 
     chartMeses = new Chart(document.getElementById('chartMeses'), {
@@ -425,18 +454,28 @@ function renderGraficos(datos) {
     chartProvincias = new Chart(document.getElementById('chartProvincias'), {
         type: 'pie',
         data: {
-            labels: ["CABA", "PROVINCIA", "SIN DATO"],
+            labels: ["Con tercero", "Internas", "Riesgos Varios"],
             datasets: [{
-                data: [zonaData["CABA"], zonaData["PROVINCIA"], zonaData["SIN DATO"]],
-                backgroundColor: ['#3498db', '#e67e22', '#95a5a6']
+                data: [tipoData["EXTERNO"], tipoData["INTERNO"], tipoData["RC"]],
+                // Mismos colores que los chips de la tabla
+                backgroundColor: ['#0056b3', '#28a745', '#c17700']
             }]
-        }
+        },
+        // Mas ancha que alta: en pantalla chica la torta ocupaba todo el alto
+        options: { aspectRatio: 2 }
     });
 }
 
 function descargarExcel() {
     if (!datosGlobales.length) return;
-    const ws = XLSX.utils.json_to_sheet(datosGlobales);
+    // Los lesionados son una lista (jsonb): en la planilla van como texto
+    const filas = datosGlobales.map(s => Object.assign({}, s, {
+        lesionados: Array.isArray(s.lesionados) && s.lesionados.length
+            ? s.lesionados.map(l => [l.apellido, l.nombre, 'DNI ' + (l.dni || ''), l.lesion, l.hospital]
+                .filter(Boolean).join(' ')).join(' | ')
+            : ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(filas);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Siniestros");
     XLSX.writeFile(wb, "Reporte_Siniestros_BARSAT.xlsx");
