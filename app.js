@@ -1,6 +1,8 @@
 const URL_API = "https://ojsjxyxvcznoydhzhsrt.supabase.co";
 const KEY_API = "sb_publishable__4dVId8Vbc2lsHIZrhzoMA_sRnfpxuh";
-const EMAILJS_SERVICE_ID = "service_snce9ja";
+// Servicio de EmailJS que envia los mails: el Gmail de la empresa (antes
+// service_snce9ja, que mandaba desde un Gmail personal)
+const EMAILJS_SERVICE_ID = "service_3ezmqhi";
 const EMAILJS_TEMPLATE_ID = "template_66ehu6p";
 const EMAILJS_PUBLIC_KEY = "uYFGRrX_AbRYotS_Q";
 
