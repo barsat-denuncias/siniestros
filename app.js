@@ -631,7 +631,10 @@ function guardarBorrador() {
         envio: (envioEnCurso && envioEnCurso.id) ? {
             flujo: envioEnCurso.flujo, id: envioEnCurso.id, nro: envioEnCurso.nro,
             folder: envioEnCurso.folder || null, fotos: envioEnCurso.fotos || null
-        } : null
+        } : null,
+        // Si se recarga la pagina, la denuncia sigue siendo la misma para el
+        // limite de 3 lecturas con IA
+        ia: flujoActivo === 'EXTERNO' ? { id: iaLecturaId, restantes: iaRestantes } : null
     };
     try { localStorage.setItem(CLAVE_BORRADOR, JSON.stringify(b)); } catch { /* sin espacio o bloqueado: sigue sin borrador */ }
 }
@@ -723,6 +726,11 @@ function restaurarBorrador() {
 
     if (b.flujo === 'EXTERNO') {
         iniciarFlujoExterno();
+        if (b.ia && b.ia.id) {
+            iaLecturaId = b.ia.id;
+            iaRestantes = typeof b.ia.restantes === 'number' ? b.ia.restantes : IA_LECTURAS_MAX;
+            actualizarBotonesIA();
+        }
         // La provincia primero: repuebla el desplegable de localidades
         set('provincia');
         actualizarLocalidades();
@@ -1151,6 +1159,8 @@ function rellenarCampoChofer(id, valor) {
     marcarCampo(id, 'autocompletado');
 }
 
+// Devuelve como termino: 'encontrado', 'no_encontrado', 'error' o nada (no se
+// busco). La lectura con IA lo usa para saber si marcar el DNI en rojo.
 async function buscarChoferPorDni() {
     const input = document.getElementById('dni_chofer');
     if (!input) return;
@@ -1191,7 +1201,7 @@ async function buscarChoferPorDni() {
         if (!data || !data.encontrado) {
             statusDni('DNI no encontrado en el padrón. Completá los datos a mano.', 'aviso');
             mostrarDatosConductor(true);
-            return;
+            return 'no_encontrado';
         }
 
         const c = data.chofer || {};
@@ -1210,6 +1220,7 @@ async function buscarChoferPorDni() {
         if (c.op) msg += ' — ' + c.op + (c.legajo ? ' (leg. ' + c.legajo + ')' : '');
         statusDni(msg, 'ok');
         mostrarDatosConductor(true);
+        return 'encontrado';
 
     } catch (err) {
         // Un error de una consulta vieja NO puede borrar los datos que trajo
@@ -1219,6 +1230,7 @@ async function buscarChoferPorDni() {
         statusDni('No se pudo consultar el padrón. Cargá los datos a mano.', 'aviso');
         mostrarDatosConductor(true);
         console.warn('buscar_chofer fallo:', err.message);
+        return 'error';
     }
 }
 
@@ -1624,11 +1636,489 @@ function initFechasEnVivo() {
     });
 }
 
+// ============================================================================
+// LECTURA CON IA DE LA DENUNCIA EN PAPEL
+// El chofer completa a mano el formulario de AON (ANEXO I). En vez de tipearlo,
+// se le sacan fotos a las hojas y la funcion leer-denuncia de Supabase se las
+// pasa a la IA (Claude Haiku), que devuelve los datos.
+// - La IA no decide nada: completa campos y marca en AMARILLO lo que no pudo
+//   leer con seguridad. En ROJO va lo que no cierra: DNI que no esta en el
+//   padron o que es de otra persona, telefono o patente con formato imposible,
+//   fecha fuera de rango. Las marcas se van al corregir el dato o al tocar
+//   "Está bien". No bloquean el avance.
+// - Nunca pisa lo que escribio una persona. Si se vuelve a leer, reemplaza lo
+//   que habia puesto la IA.
+// - El DNI del conductor se busca en el padron como si lo hubieran tipeado: si
+//   figura, manda el padron y el papel solo completa lo que falte (telefono).
+// - Hasta 3 lecturas por denuncia: lo controla el servidor con iaLecturaId.
+// - Mientras lee (20-30 s) se puede ir a dibujar el croquis.
+// Probado el 13 y 14/10/2026 con 10 denuncias reales (carpeta PRUEBA IA BARSAT).
+// ============================================================================
+const URL_LEER_DENUNCIA = `${URL_API}/functions/v1/leer-denuncia`;
+const IA_LECTURAS_MAX = 3;
+const IA_PAGINAS_MAX = 3;
+const IA_LADO_MAX = 2000;    // en la prueba las hojas se leyeron bien a 2000 px
+const IA_CALIDAD = 0.85;
+let iaLecturaId = null;      // uno por denuncia nueva: el servidor cuenta las lecturas con esto
+let iaRestantes = IA_LECTURAS_MAX;
+let iaLeyendo = false;
+const iaLlenados = new Set();   // campos que completo la IA (una lectura nueva los puede pisar)
+
+// Campo de la IA -> campo del formulario, para marcar lo que la IA no pudo leer
+const MAPA_IA = {
+    fecha: 'fecha_hecho', hora: 'hora_hecho', calle: 'calle', interseccion: 'interseccion',
+    conductor_dni: 'dni_chofer', conductor_nombre: 'nombre_chofer', conductor_telefono: 'tel_chofer',
+    conductor_domicilio: 'domicilio_chofer', conductor_localidad: 'loc_chofer',
+    conductor_provincia: 'prov_chofer', conductor_cp: 'cp_chofer',
+    danos_propios: 'danos_propios', relato: 'descripcion',
+    tercero_dominio: 'patente_tercero', tercero_marca_modelo: 'marca_tercero',
+    tercero_aseguradora: 'seguro_tercero', tercero_poliza: 'poliza_tercero', tercero_danos: 'danos_tercero',
+    tercero_conductor_nombre: 'nombre_cond_tercero', tercero_conductor_dni: 'dni_cond_tercero',
+    tercero_conductor_telefono: 'tel_cond_tercero'
+};
+
+const sinAcentos = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '');
+const soloDigitos = (s) => String(s == null ? '' : s).replace(/\D/g, '');
+const dominioLimpio = (s) => String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+const textoIA = (s) => String(s == null ? '' : s).trim().toUpperCase();
+
+function nuevoIdLectura() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+function initIA() {
+    const inp = document.getElementById('f_ia');
+    if (inp) inp.addEventListener('change', () => { if (!iaLeyendo) statusIA(''); });
+}
+
+function statusIA(msg, tipo) {
+    const el = document.getElementById('ia-status');
+    if (!el) return;
+    el.innerText = msg || '';
+    el.className = 'dni-status' + (tipo ? ' ' + tipo : '');
+}
+
+function alertaIA(msg) {
+    const el = document.getElementById('ia-alerta');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.classList.toggle('hidden', !msg);
+}
+
+// Aviso abajo de la pantalla: la lectura puede terminar mientras se dibuja el croquis
+let timerAvisoFlotante = null;
+function avisoFlotante(msg, tipo) {
+    const el = document.getElementById('aviso-flotante');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'aviso-flotante' + (tipo === 'error' ? ' error' : '');
+    clearTimeout(timerAvisoFlotante);
+    timerAvisoFlotante = setTimeout(() => el.classList.add('hidden'), 12000);
+}
+
+function actualizarBotonesIA() {
+    const btn = document.getElementById('btn-ia-leer');
+    const croquis = document.getElementById('btn-ia-croquis');
+    if (croquis) croquis.classList.toggle('hidden', !iaLeyendo);
+    if (!btn) return;
+    btn.disabled = iaLeyendo;
+    btn.classList.toggle('hidden', iaRestantes <= 0 && !iaLeyendo);
+    if (iaLeyendo) btn.innerText = 'Leyendo…';
+    else if (iaRestantes < IA_LECTURAS_MAX) btn.innerText = `Volver a leer con IA (quedan ${iaRestantes})`;
+    else btn.innerText = 'Completar con IA';
+}
+
+function resetearIA() {
+    iaLecturaId = nuevoIdLectura();
+    iaRestantes = IA_LECTURAS_MAX;
+    iaLeyendo = false;
+    iaLlenados.clear();
+    limpiarAdjunto('f_ia');
+    quitarMarcasIA();
+    statusIA('');
+    alertaIA('');
+    const caja = document.getElementById('caja-ia');
+    if (caja) caja.classList.remove('hidden');
+    actualizarBotonesIA();
+}
+
+// Marca un campo: 'dudoso' (amarillo) o 'error' (rojo), con una nota abajo.
+// Un rojo no se baja a amarillo.
+function marcarIA(id, nivel, texto) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (nivel !== 'error' && el.classList.contains('ia-error')) return;
+    quitarMarcaIA(el);
+    el.classList.add(nivel === 'error' ? 'ia-error' : 'ia-dudoso');
+    const p = document.createElement('p');
+    p.className = 'ia-nota ' + (nivel === 'error' ? 'error' : 'dudoso');
+    p.dataset.iaPara = id;
+    p.textContent = texto + ' ';
+    const ok = document.createElement('button');
+    ok.type = 'button';
+    ok.className = 'ia-nota-ok';
+    ok.textContent = 'Está bien';
+    ok.addEventListener('click', () => quitarMarcaIA(el));
+    p.appendChild(ok);
+    const ancla = el.parentElement && el.parentElement.style.display === 'flex' ? el.parentElement : el;
+    ancla.insertAdjacentElement('afterend', p);
+    el.addEventListener('input', () => quitarMarcaIA(el), { once: true });
+    el.addEventListener('change', () => quitarMarcaIA(el), { once: true });
+}
+
+function quitarMarcaIA(el) {
+    if (!el) return;
+    el.classList.remove('ia-error', 'ia-dudoso');
+    document.querySelectorAll('.ia-nota').forEach(p => { if (p.dataset.iaPara === el.id) p.remove(); });
+}
+
+function quitarMarcasIA() {
+    document.querySelectorAll('.ia-error, .ia-dudoso').forEach(el => el.classList.remove('ia-error', 'ia-dudoso'));
+    document.querySelectorAll('.ia-nota').forEach(p => p.remove());
+}
+
+// Pone un dato leido. No pisa lo que escribio una persona: solo campos vacios
+// o que ya habia completado la IA en una lectura anterior.
+function ponerIA(id, valor) {
+    const el = document.getElementById(id);
+    const v = String(valor == null ? '' : valor).trim();
+    if (!el || !v) return false;
+    if (el.value.trim() && !iaLlenados.has(id)) return false;
+    el.value = v;
+    el.style.borderColor = '#ddd';
+    iaLlenados.add(id);
+    el.addEventListener('input', () => iaLlenados.delete(id), { once: true });
+    return true;
+}
+
+// "CABA", "Capital Federal", "Bs As", "Córdoba"... -> nombre de la lista PROVINCIAS
+function provinciaDeLista(txt) {
+    const n = sinAcentos(txt).toUpperCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+    if (!n) return '';
+    if (/^(CABA|CAP|CAPITAL|CAPITAL FEDERAL|C ?A ?B ?A|CIUDAD (AUTONOMA )?DE BUENOS AIRES)$/.test(n)) return 'CABA';
+    if (/^(BS ?AS|PCIA DE BUENOS AIRES|PROVINCIA DE BUENOS AIRES|PROV BS AS)$/.test(n)) return 'BUENOS AIRES';
+    return PROVINCIAS.find(p => sinAcentos(p) === n) || '';
+}
+
+// Dos nombres son de la misma persona si comparten alguna palabra de 3 letras o mas
+function mismaPersona(a, b) {
+    const palabras = (s) => sinAcentos(s).toUpperCase().split(/[^A-Z]+/).filter(w => w.length >= 3);
+    const pb = new Set(palabras(b));
+    return palabras(a).some(w => pb.has(w));
+}
+
+// Patentes: ABC123, AB123CD, motos A123BCD y 123ABC
+function esFormatoDominio(d) {
+    return /^([A-Z]{3}\d{3}|[A-Z]{2}\d{3}[A-Z]{2}|[A-Z]\d{3}[A-Z]{3}|\d{3}[A-Z]{3})$/.test(d);
+}
+
+function telefonoValido(v) {
+    let t = soloDigitos(v);
+    if (t.startsWith('54') && t.length === 12) t = t.slice(2);
+    if (t.startsWith('0')) t = t.slice(1);
+    return t.length === 10;
+}
+
+// Foto de una hoja -> JPEG de hasta 2000 px en base64 (sin el "data:...,")
+function paginaParaIA(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const escala = Math.min(1, IA_LADO_MAX / Math.max(img.width, img.height));
+                const w = Math.round(img.width * escala), h = Math.round(img.height * escala);
+                const cv = document.createElement('canvas');
+                cv.width = w; cv.height = h;
+                const cx = cv.getContext('2d');
+                cx.fillStyle = '#fff';
+                cx.fillRect(0, 0, w, h);
+                cx.drawImage(img, 0, 0, w, h);
+                URL.revokeObjectURL(url);
+                const dataUrl = cv.toDataURL('image/jpeg', IA_CALIDAD);
+                resolve(dataUrl.slice(dataUrl.indexOf(',') + 1));
+            } catch (e) {
+                URL.revokeObjectURL(url);
+                reject(e);
+            }
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo abrir una de las fotos.')); };
+        img.src = url;
+    });
+}
+
+async function leerDenunciaConIA() {
+    if (iaLeyendo) return;
+    const inp = document.getElementById('f_ia');
+    const fotos = (adjuntosAcumulados['f_ia'] || Array.from((inp && inp.files) || []))
+        .filter(f => /^image\//i.test(f.type || ''));
+    if (!fotos.length) { statusIA('Primero sacá o elegí las fotos de la denuncia en papel.', 'aviso'); return; }
+    if (fotos.length > IA_PAGINAS_MAX) {
+        statusIA(`Elegiste ${fotos.length} fotos: mandá como máximo ${IA_PAGINAS_MAX}, una por hoja. Sacá las que sobren con la X.`, 'aviso');
+        return;
+    }
+    if (iaRestantes <= 0) { statusIA('Ya se usaron las 3 lecturas de esta denuncia. Completala a mano.', 'aviso'); return; }
+
+    // Si mientras lee se empieza otra denuncia, la respuesta se descarta
+    const lecturaId = iaLecturaId;
+    iaLeyendo = true;
+    actualizarBotonesIA();
+    alertaIA('');
+    const inicio = Date.now();
+    const contador = () => statusIA(`Leyendo la denuncia… ${Math.round((Date.now() - inicio) / 1000)} s `
+        + '(suele tardar 20 a 30 segundos). Mientras tanto podés dibujar el croquis.', 'buscando');
+    contador();
+    const timer = setInterval(contador, 1000);
+
+    try {
+        const imagenes = await Promise.all(fotos.map(paginaParaIA));
+        // Clave publica nueva: va solo en "apikey". En "Authorization" Supabase
+        // la toma por un JWT y rechaza el pedido.
+        const res = await fetch(URL_LEER_DENUNCIA, {
+            method: 'POST',
+            headers: { 'apikey': KEY_API, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lectura_id: lecturaId, dominio: unidad.DOMINIO, imagenes })
+        });
+        let data = null;
+        try { data = await res.json(); } catch { /* respuesta sin JSON */ }
+        if (lecturaId !== iaLecturaId) return;
+        if (data && typeof data.restantes === 'number') iaRestantes = data.restantes;
+        else if (res.status === 429) iaRestantes = 0;
+        if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || `Error ${res.status} del servidor.`);
+
+        const r = await aplicarLecturaIA(data.datos || {});
+        if (lecturaId !== iaLecturaId) return;
+        const revisar = r.amarillos + r.rojos;
+        const msg = `Listo: la IA completó ${r.llenos} datos. `
+            + (revisar ? `Revisá ${r.amarillos} en amarillo y ${r.rojos} en rojo en los pasos 1 a 4.` : 'Revisalos igual contra el papel.')
+            + (r.alertas.length ? ' Hay un aviso arriba de todo en el paso 1.' : '');
+        statusIA(msg, 'ok');
+        avisoFlotante(msg, r.rojos || r.alertas.length ? 'error' : '');
+    } catch (e) {
+        if (lecturaId !== iaLecturaId) return;
+        const msg = textoError(e);
+        statusIA(msg, 'aviso');
+        avisoFlotante(msg, 'error');
+    } finally {
+        clearInterval(timer);
+        if (lecturaId === iaLecturaId) {
+            iaLeyendo = false;
+            actualizarBotonesIA();
+            guardarBorrador();
+        }
+    }
+}
+
+async function aplicarLecturaIA(d) {
+    quitarMarcasIA();
+    const destino = {};        // campo de la IA -> campo del formulario donde quedo
+    const poner = (campoIA, id, valor) => {
+        if (!ponerIA(id, valor)) return false;
+        destino[campoIA] = id;
+        return true;
+    };
+    const alertas = [];
+
+    // ---- La denuncia tiene que ser de la unidad que se esta cargando ----
+    const domPapel = dominioLimpio(d.dominio_propio);
+    const domUnidad = dominioLimpio(unidad.DOMINIO);
+    const domSemi = dominioLimpio(vinculoDatos && vinculoDatos.dominio);
+    if (domPapel && domPapel !== domUnidad && domPapel !== domSemi) {
+        alertas.push(`En el papel el dominio dice ${domPapel}, pero estás cargando ${unidad.DOMINIO}. `
+            + 'Revisá que sea la denuncia de esta unidad.');
+    }
+
+    // ---- Paso 1: fecha, hora y lugar ----
+    const fecha = String(d.fecha || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+        if (poner('fecha', 'fecha_hecho', fecha) && (fecha < '2025-01-01' || fecha > hoyISO())) {
+            marcarIA('fecha_hecho', 'error', 'La fecha leída está fuera de rango: revisala.');
+        }
+    } else if (fecha && !document.getElementById('fecha_hecho').value) {
+        marcarIA('fecha_hecho', 'dudoso', `La IA leyó "${fecha}", que no es una fecha: cargala a mano.`);
+    }
+    const hora = String(d.hora || '').trim();
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(hora)) poner('hora', 'hora_hecho', hora);
+
+    const prov = provinciaDeLista(d.provincia);
+    const selProv = document.getElementById('provincia');
+    if (prov && (!selProv.value || iaLlenados.has('provincia'))) {
+        let loc = textoIA(d.localidad);
+        // "CABA" o "Capital Federal" no es un barrio: queda para elegir
+        if (prov === 'CABA' && provinciaDeLista(loc) === 'CABA') loc = '';
+        // Primero la provincia, para buscar la localidad entre SUS opciones
+        selProv.value = prov;
+        actualizarLocalidades();
+        const opcion = Array.from(document.getElementById('localidad').options)
+            .find(o => o.value && o.value !== 'OTRA' && sinAcentos(o.value) === sinAcentos(loc));
+        setearProvinciaLocalidad(prov, opcion ? opcion.value : loc);
+        iaLlenados.add('provincia');
+        destino.provincia = 'provincia';
+        if (loc) {
+            destino.localidad = opcion ? 'localidad' : 'manual_localidad';
+            iaLlenados.add(destino.localidad);
+        } else {
+            const manual = document.getElementById('manual_localidad');
+            marcarIA(manual && !manual.classList.contains('hidden') ? 'manual_localidad' : 'localidad', 'dudoso',
+                prov === 'CABA' ? 'El papel no dice el barrio: elegilo o escribilo.' : 'El papel no dice la localidad.');
+        }
+    }
+    poner('calle', 'calle', textoIA(d.calle));
+    poner('interseccion', 'interseccion', textoIA(d.interseccion));
+    if (!document.getElementById('cp').value.trim()) {
+        marcarIA('cp', 'dudoso', 'El formulario de papel no trae el código postal del lugar: completalo.');
+    }
+
+    // ---- Paso 2: conductor. El DNI se busca en el padron como si lo hubieran tipeado ----
+    const dni = soloDigitos(d.conductor_dni);
+    const inpDni = document.getElementById('dni_chofer');
+    let padron = null;
+    if (dni && (!inpDni.value.trim() || iaLlenados.has('dni_chofer'))) {
+        inpDni.value = dni;
+        inpDni.style.borderColor = '#ddd';
+        iaLlenados.add('dni_chofer');
+        destino.conductor_dni = 'dni_chofer';
+        inpDni.addEventListener('input', () => iaLlenados.delete('dni_chofer'), { once: true });
+        ultimoDniBuscado = '';   // que busque aunque sea el mismo DNI de antes
+        if (dni.length < 7 || dni.length > 8) {
+            mostrarDatosConductor(true);
+            marcarIA('dni_chofer', 'error', 'Un DNI tiene 7 u 8 números: revisalo contra el papel.');
+        } else {
+            padron = await buscarChoferPorDni();
+            // Lo que trajo el padron ya no es "de la IA": el papel no lo pisa
+            CAMPOS_AUTOCOMPLETABLES.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.classList.contains('autocompletado')) iaLlenados.delete(id);
+            });
+            if (padron === 'no_encontrado') {
+                marcarIA('dni_chofer', 'error', 'Este DNI no está en el padrón de choferes: compará con el papel.');
+            }
+        }
+    }
+    const nombrePapel = textoIA(d.conductor_nombre);
+    if (padron === 'encontrado' && nombrePapel
+        && !mismaPersona(nombrePapel, document.getElementById('nombre_chofer').value)) {
+        marcarIA('nombre_chofer', 'error', `En el papel dice "${nombrePapel}", que no coincide con el padrón: revisá el DNI.`);
+    }
+    // El papel completa lo que el padron no tenga (por ejemplo el telefono)
+    poner('conductor_nombre', 'nombre_chofer', nombrePapel);
+    poner('conductor_telefono', 'tel_chofer', soloDigitos(d.conductor_telefono));
+    poner('conductor_domicilio', 'domicilio_chofer', textoIA(d.conductor_domicilio));
+    poner('conductor_localidad', 'loc_chofer', textoIA(d.conductor_localidad));
+    poner('conductor_provincia', 'prov_chofer', provinciaDeLista(d.conductor_provincia) || textoIA(d.conductor_provincia));
+    poner('conductor_cp', 'cp_chofer', soloDigitos(d.conductor_cp));
+    if (Object.keys(destino).some(k => k.startsWith('conductor_'))) mostrarDatosConductor(true);
+    if (!inpDni.value.trim() && nombrePapel) {
+        marcarIA('dni_chofer', 'dudoso', 'El papel no trae el DNI: escribilo o poné NO INFORMA.');
+    }
+
+    // ---- Paso 3: daños y relato (el croquis lo dibuja siempre una persona) ----
+    poner('danos_propios', 'danos_propios', textoIA(d.danos_propios));
+    poner('relato', 'descripcion', textoIA(d.relato));
+
+    // ---- Paso 4: el tercero ----
+    const P = { nombre: textoIA(d.tercero_propietario_nombre), doc: soloDigitos(d.tercero_propietario_documento),
+                tel: soloDigitos(d.tercero_propietario_telefono) };
+    const C = { nombre: textoIA(d.tercero_conductor_nombre), doc: soloDigitos(d.tercero_conductor_dni),
+                tel: soloDigitos(d.tercero_conductor_telefono) };
+    const hayP = !!(P.nombre || P.doc || P.tel);
+    const hayC = !!(C.nombre || C.doc || C.tel);
+    const hayVehiculo = [d.tercero_dominio, d.tercero_marca_modelo, d.tercero_aseguradora, d.tercero_poliza]
+        .some(v => String(v || '').trim());
+
+    if (!hayVehiculo && (hayP || hayC)) {
+        // Criterio de AON: si del tercero no hay vehiculo (rejas, un poste, una
+        // persona) no se arma el recuadro del otro vehiculo: se lo nombra en el relato.
+        const t = hayC ? C : P;
+        const danos = textoIA(d.tercero_danos);
+        const linea = 'TERCERO: ' + [t.nombre, t.doc && `DNI ${t.doc}`, t.tel && `TEL. ${t.tel}`, danos && `DAÑOS: ${danos}`]
+            .filter(Boolean).join(' - ');
+        const rel = document.getElementById('descripcion');
+        if (rel && !/TERCERO:/i.test(rel.value) && (!rel.value.trim() || iaLlenados.has('descripcion'))) {
+            rel.value = (rel.value.trim() ? rel.value.trim() + '\n' : '') + linea;
+            iaLlenados.add('descripcion');
+        }
+        alertas.push('El papel no trae vehículo del tercero: sus datos quedaron al final del relato, como pide AON. '
+            + 'En el paso 4 poné NO INFORMA donde no haya datos.');
+    } else if (hayVehiculo) {
+        poner('tercero_dominio', 'patente_tercero', dominioLimpio(d.tercero_dominio));
+        poner('tercero_marca_modelo', 'marca_tercero', textoIA(d.tercero_marca_modelo));
+        poner('tercero_aseguradora', 'seguro_tercero', textoIA(d.tercero_aseguradora));
+        poner('tercero_poliza', 'poliza_tercero', textoIA(d.tercero_poliza));
+        poner('tercero_danos', 'danos_tercero', textoIA(d.tercero_danos));
+
+        // En el papel van primero los datos del dueño y despues los del
+        // conductor; en la app es al reves.
+        const esProp = textoIA(d.tercero_conductor_es_propietario);
+        const mismo = (C.doc && P.doc && C.doc === P.doc) || (C.nombre && P.nombre && mismaPersona(C.nombre, P.nombre));
+        const distintos = esProp === 'NO' || (esProp !== 'SI' && hayC && hayP && !mismo);
+        setearEsPropietario(distintos ? 'NO' : 'SI');
+        destino.tercero_conductor_es_propietario = 'es_propietario';
+        if (!esProp) marcarIA('es_propietario', 'dudoso', 'El papel no dice si el conductor es el dueño: confirmalo.');
+
+        // Si maneja el dueño y no hay datos del conductor, van los del dueño
+        const usarC = distintos || hayC;
+        const cond = usarC ? C : P;
+        poner(usarC ? 'tercero_conductor_nombre' : 'tercero_propietario_nombre', 'nombre_cond_tercero', cond.nombre);
+        poner(usarC ? 'tercero_conductor_dni' : 'tercero_propietario_documento', 'dni_cond_tercero', cond.doc);
+        poner(usarC ? 'tercero_conductor_telefono' : 'tercero_propietario_telefono', 'tel_cond_tercero', cond.tel);
+        if (distintos) {
+            poner('tercero_propietario_nombre', 'prop_nombre', P.nombre);
+            poner('tercero_propietario_documento', 'prop_dni', P.doc);
+            poner('tercero_propietario_telefono', 'prop_tel', P.tel);
+        }
+    }
+
+    if (textoIA(d.hubo_lesionados) === 'SI') {
+        const sel = document.getElementById('hubo_lesionados');
+        if (sel && sel.value !== 'SI') { sel.value = 'SI'; actualizarLesionados(); }
+        marcarIA('hubo_lesionados', 'dudoso', 'El papel tiene lesionados (ANEXO II): cargá sus datos acá abajo.');
+    }
+
+    // ---- Formatos imposibles: en rojo (solo lo que completo la IA) ----
+    const chequear = (id, ok, texto) => {
+        const el = document.getElementById(id);
+        if (el && iaLlenados.has(id) && el.value.trim() && !ok(el.value)) marcarIA(id, 'error', texto);
+    };
+    ['tel_chofer', 'tel_cond_tercero', 'prop_tel'].forEach(id => chequear(id, telefonoValido,
+        'Un teléfono tiene 10 números (código de área sin 0 y sin el 15): revisalo.'));
+    chequear('patente_tercero', v => esFormatoDominio(dominioLimpio(v)),
+        'Este dominio no tiene formato de patente: revisalo contra el papel.');
+    ['dni_cond_tercero', 'prop_dni'].forEach(id => chequear(id, v => [7, 8, 11].includes(soloDigitos(v).length),
+        'Un DNI tiene 7 u 8 números (11 si es un CUIT): revisalo.'));
+    chequear('cp_chofer', v => /^\d{4}$/.test(soloDigitos(v)), 'Un código postal tiene 4 números: revisalo.');
+
+    // ---- Lo que la IA no pudo leer con seguridad: en amarillo ----
+    (Array.isArray(d.campos_dudosos) ? d.campos_dudosos : []).forEach(c => {
+        if (destino[c]) {
+            marcarIA(destino[c], 'dudoso', 'La IA no está segura de este dato: comparalo con el papel.');
+        } else if (MAPA_IA[c]) {
+            const el = document.getElementById(MAPA_IA[c]);
+            if (el && !el.value.trim()) marcarIA(MAPA_IA[c], 'dudoso', 'La IA no pudo leer este dato: completalo mirando el papel.');
+        }
+    });
+
+    alertaIA(alertas.join(' '));
+    const form = document.getElementById('pantalla-formulario');
+    return {
+        llenos: Object.keys(destino).length,
+        amarillos: form.querySelectorAll('.ia-dudoso').length,
+        rojos: form.querySelectorAll('.ia-error').length,
+        alertas
+    };
+}
+
 window.onload = function() {
     document.getElementById('fecha_hecho').setAttribute('max', hoyISO());
     llenarProvincias(document.getElementById('provincia'));
     llenarProvincias(document.getElementById('rc_provincia'));
     initAdjuntos();
+    initIA();
     initBorrador();
     initFechasEnVivo();
     // Dominio: mayusculas y solo letras y numeros. Si el chofer escribia
@@ -1932,6 +2422,9 @@ function iniciarFlujoExterno() {
     // Archivos elegidos en el paso 5
     CATEGORIAS_FOTO.forEach(c => limpiarAdjunto(`f_${c}`));
 
+    // Lectura con IA: denuncia nueva, contador nuevo (3 lecturas)
+    resetearIA();
+
     // Reset de lesionados
     const selLes = document.getElementById('hubo_lesionados');
     if (selLes) selLes.value = 'NO';
@@ -2137,6 +2630,9 @@ async function iniciarAmpliacion(idx) {
     if (croquisPrevioDescarga) croquisPrevioDescarga.catch(() => {});   // el error se maneja al dibujar
     precargarFormulario(s);
     actualizarBannerAmpliacion();
+    // La lectura con IA es para cargar una denuncia nueva desde el papel
+    quitarMarcasIA();
+    document.getElementById('caja-ia').classList.add('hidden');
 
     document.getElementById('pantalla-validacion').classList.add('hidden');
     document.getElementById('pantalla-seleccion').classList.add('hidden');

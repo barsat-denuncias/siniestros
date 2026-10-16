@@ -521,3 +521,37 @@ textarea.txt-chico {
 .btn-croquis:hover { background: #5a6268; }
 .btn-croquis-rojo { background: #dc3545; }
 .btn-croquis-rojo:hover { background: #c82333; }
+
+/* ===== Lectura con IA de la denuncia en papel ===== */
+.caja-ia {
+    background: #eef5ff; border: 1px solid #b6d4fe; border-radius: 8px;
+    padding: 12px 14px; margin: 0 0 18px; text-align: left;
+}
+.caja-ia-titulo { margin: 0 0 4px; font-weight: bold; color: #0a3d7a; font-size: 15px; }
+.caja-ia-texto { margin: 0 0 10px; font-size: 13px; color: #33506f; line-height: 1.4; }
+.caja-ia .upload-group { background: #fff; }
+.caja-ia #ia-status { margin: 8px 0 0; }
+.ia-alerta {
+    background: #fdecea; border: 1px solid #f5c2c7; color: #842029; border-radius: 6px;
+    padding: 8px 10px; margin: 8px 0; font-size: 13px; line-height: 1.4;
+}
+/* Amarillo: la IA no esta segura. Rojo: no coincide con la base o el formato no da. */
+input.ia-dudoso, select.ia-dudoso, textarea.ia-dudoso { background: #fff8e1; border-color: #f0ad4e !important; }
+input.ia-error, select.ia-error, textarea.ia-error { background: #fdecea; border-color: #d9534f !important; }
+.ia-nota { font-size: 12px; text-align: left; margin: -4px 0 8px; line-height: 1.35; }
+.ia-nota.dudoso { color: #8a5a00; }
+.ia-nota.error { color: #b02a37; }
+.ia-nota-ok {
+    display: inline; width: auto; margin: 0 0 0 4px; padding: 0;
+    background: none; border: none; color: #0056b3; text-decoration: underline;
+    font-size: 12px; cursor: pointer;
+}
+.ia-nota-ok:hover { background: none; }
+/* Aviso abajo de la pantalla: se ve aunque se este dibujando el croquis */
+.aviso-flotante {
+    position: fixed; left: 12px; right: 12px; bottom: 16px; z-index: 1500;
+    max-width: 520px; margin: 0 auto; padding: 12px 14px; border-radius: 8px;
+    background: #0f5132; color: #fff; font-size: 14px; line-height: 1.4;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .25); cursor: pointer;
+}
+.aviso-flotante.error { background: #842029; }

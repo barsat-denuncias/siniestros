@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="grupo_barsat_logistico_logo.png">
     <!-- El ?v= evita que el navegador sirva una version cacheada.
          Al cambiar app.js o style.css, subir el numero. -->
-    <link rel="stylesheet" href="style.css?v=29">
+    <link rel="stylesheet" href="style.css?v=30">
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -180,6 +180,21 @@
             <div class="progress-bar"><div id="progress" style="width: 20%;"></div></div>
 
             <div class="step" id="step-1">
+                <!-- Lectura con IA de la denuncia en papel (ver LECTURA CON IA en app.js).
+                     Solo en denuncias nuevas: en una ampliacion se oculta. -->
+                <div id="caja-ia" class="caja-ia">
+                    <p class="caja-ia-titulo">¿Tenés la denuncia en papel?</p>
+                    <p class="caja-ia-texto">Sacale una foto a cada hoja (hasta 3) y la IA completa el formulario. Después revisá lo que quede marcado en amarillo o en rojo.</p>
+                    <div class="upload-group">
+                        <label for="f_ia">Fotos de la denuncia en papel</label>
+                        <input type="file" id="f_ia" accept="image/*" multiple>
+                    </div>
+                    <div id="ia-alerta" class="ia-alerta hidden"></div>
+                    <button type="button" id="btn-ia-leer" onclick="leerDenunciaConIA()">Completar con IA</button>
+                    <button type="button" id="btn-ia-croquis" class="btn-secundario hidden" onclick="cambiarPaso(3)">Mientras tanto, dibujar el croquis</button>
+                    <p id="ia-status" class="dni-status"></p>
+                </div>
+
                 <label>Fecha y Hora del siniestro*</label>
                 <div style="display: flex; gap: 10px;">
                     <input type="date" id="fecha_hecho" required min="2025-01-01">
@@ -683,6 +698,8 @@
             </div>
         </div>
     </div>
-    <script src="app.js?v=29"></script>
+    <!-- Aviso que se ve en cualquier paso (lo usa la lectura con IA) -->
+    <div id="aviso-flotante" class="aviso-flotante hidden" onclick="this.classList.add('hidden')"></div>
+    <script src="app.js?v=30"></script>
 </body>
 </html>
