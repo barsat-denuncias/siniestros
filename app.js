@@ -1651,7 +1651,8 @@ function initFechasEnVivo() {
 // - El DNI del conductor se busca en el padron como si lo hubieran tipeado: si
 //   figura, manda el padron y el papel solo completa lo que falte (telefono).
 // - Hasta 3 lecturas por denuncia: lo controla el servidor con iaLecturaId.
-// - Mientras lee (20-30 s) se puede ir a dibujar el croquis.
+// - Mientras lee (unos 20 s) la pagina va sola al croquis, con un cartel; al
+//   terminar, el cartel ofrece "Revisar los datos" (vuelve al paso 1).
 // Probado el 13 y 14/10/2026 con 10 denuncias reales (carpeta PRUEBA IA BARSAT).
 // ============================================================================
 const URL_LEER_DENUNCIA = `${URL_API}/functions/v1/leer-denuncia`;
@@ -1721,10 +1722,20 @@ function avisoFlotante(msg, tipo) {
     timerAvisoFlotante = setTimeout(() => el.classList.add('hidden'), 12000);
 }
 
+// Cartel arriba del croquis. Solo se ve si se esta en el paso 3: si el chofer
+// se fue a otro paso, al terminar le avisa el cartel flotante.
+function bannerIA(texto, textoBoton, tipo) {
+    const caja = document.getElementById('ia-banner-croquis');
+    if (!caja) return;
+    if (!texto) { caja.classList.add('hidden'); return; }
+    document.getElementById('ia-banner-texto').textContent = texto;
+    document.getElementById('btn-ia-banner').innerText = textoBoton;
+    caja.className = 'ia-banner' + (tipo ? ' ' + tipo : '');
+    caja.classList.toggle('hidden', pasoExterno !== 3);
+}
+
 function actualizarBotonesIA() {
     const btn = document.getElementById('btn-ia-leer');
-    const croquis = document.getElementById('btn-ia-croquis');
-    if (croquis) croquis.classList.toggle('hidden', !iaLeyendo);
     if (!btn) return;
     btn.disabled = iaLeyendo;
     btn.classList.toggle('hidden', iaRestantes <= 0 && !iaLeyendo);
@@ -1742,6 +1753,7 @@ function resetearIA() {
     quitarMarcasIA();
     statusIA('');
     alertaIA('');
+    bannerIA('');
     const caja = document.getElementById('caja-ia');
     if (caja) caja.classList.remove('hidden');
     actualizarBotonesIA();
@@ -1869,11 +1881,22 @@ async function leerDenunciaConIA() {
     iaLeyendo = true;
     actualizarBotonesIA();
     alertaIA('');
+    // La espera se aprovecha: se va directo a dibujar el croquis, que la IA no hace
+    cambiarPaso(3);
     const inicio = Date.now();
-    const contador = () => statusIA(`Leyendo la denuncia… ${Math.round((Date.now() - inicio) / 1000)} s `
-        + '(suele tardar 20 a 30 segundos). Mientras tanto podés dibujar el croquis.', 'buscando');
+    const contador = () => {
+        const s = Math.round((Date.now() - inicio) / 1000);
+        statusIA(`Leyendo la denuncia… ${s} s (suele tardar unos 20 segundos).`, 'buscando');
+        bannerIA(`La IA está completando la denuncia (${s} s, suele tardar unos 20). `
+            + 'Mientras tanto, dibujá el croquis acá abajo. Cuando termine te avisamos acá para que revises los datos.',
+            'Dibujarlo después');
+    };
     contador();
     const timer = setInterval(contador, 1000);
+    // El croquis esta abajo de daños y relato: se baja hasta el cartel
+    const banner = document.getElementById('ia-banner-croquis');
+    // (sin "smooth": en el celular el desplazamiento suave se cortaba a mitad de camino)
+    if (banner) setTimeout(() => banner.scrollIntoView({ block: 'start' }), 50);
 
     try {
         const imagenes = await Promise.all(fotos.map(paginaParaIA));
@@ -1897,13 +1920,17 @@ async function leerDenunciaConIA() {
         const msg = `Listo: la IA completó ${r.llenos} datos. `
             + (revisar ? `Revisá ${r.amarillos} en amarillo y ${r.rojos} en rojo en los pasos 1 a 4.` : 'Revisalos igual contra el papel.')
             + (r.alertas.length ? ' Hay un aviso arriba de todo en el paso 1.' : '');
+        clearInterval(timer);
         statusIA(msg, 'ok');
-        avisoFlotante(msg, r.rojos || r.alertas.length ? 'error' : '');
+        bannerIA(msg + ' Cuando termines el croquis, tocá "Revisar los datos".', 'Revisar los datos', 'listo');
+        if (pasoExterno !== 3) avisoFlotante(msg, r.rojos || r.alertas.length ? 'error' : '');
     } catch (e) {
         if (lecturaId !== iaLecturaId) return;
+        clearInterval(timer);
         const msg = textoError(e);
         statusIA(msg, 'aviso');
-        avisoFlotante(msg, 'error');
+        bannerIA(msg, 'Volver al paso 1', 'error');
+        if (pasoExterno !== 3) avisoFlotante(msg, 'error');
     } finally {
         clearInterval(timer);
         if (lecturaId === iaLecturaId) {
@@ -2924,6 +2951,9 @@ function cambiarPaso(paso) {
     if (paso >= 1 && paso <= 4) { msg.style.display = 'block'; }
     else { msg.style.display = 'none'; }
     if (paso === 3) iniciarCroquis();
+    // El cartel de la IA arriba del croquis es solo para esa espera: al irse
+    // del paso 3 se cierra (si sigue leyendo, avisa el cartel flotante)
+    if (paso !== 3) bannerIA('');
     pasoExterno = paso;
     programarBorrador();
     window.scrollTo(0,0);

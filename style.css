@@ -555,3 +555,15 @@ input.ia-error, select.ia-error, textarea.ia-error { background: #fdecea; border
     box-shadow: 0 4px 14px rgba(0, 0, 0, .25); cursor: pointer;
 }
 .aviso-flotante.error { background: #842029; }
+/* Cartel arriba del croquis mientras la IA lee la denuncia */
+.ia-banner {
+    scroll-margin-top: 12px;
+    background: #eef5ff; border: 1px solid #b6d4fe; border-radius: 8px;
+    padding: 12px 14px; margin: 0 0 16px; text-align: left;
+}
+.ia-banner p { margin: 0 0 10px; font-size: 14px; color: #0a3d7a; line-height: 1.4; }
+.ia-banner.listo { background: #e9f7ef; border-color: #a3cfbb; }
+.ia-banner.listo p { color: #0f5132; }
+.ia-banner.error { background: #fdecea; border-color: #f5c2c7; }
+.ia-banner.error p { color: #842029; }
+.ia-banner button { margin: 0; padding: 11px; font-size: 15px; }
