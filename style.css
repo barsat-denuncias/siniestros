@@ -562,6 +562,15 @@ input.ia-error, select.ia-error, textarea.ia-error { background: #fdecea; border
     padding: 12px 14px; margin: 0 0 16px; text-align: left;
 }
 .ia-banner p { margin: 0 0 10px; font-size: 14px; color: #0a3d7a; line-height: 1.4; }
+.ia-banner .ia-banner-titulo { font-weight: bold; font-size: 15px; margin-bottom: 8px; }
+.ia-banner .ia-banner-sub { font-size: 13px; }
+.ia-banner .ia-banner-sub:empty { display: none; }
+/* Barra de progreso: estimada (la IA no avisa cuanto le falta), para que se
+   vea que avanza y que tarda segundos, no minutos */
+.ia-progreso { height: 8px; background: #d6e4f7; border-radius: 4px; overflow: hidden; margin: 0 0 10px; }
+.ia-progreso > div { height: 100%; width: 0; background: #0056b3; border-radius: 4px; transition: width .5s linear; }
+.ia-banner.listo .ia-progreso { background: #cfe8d9; }
+.ia-banner.listo .ia-progreso > div { background: #198754; }
 .ia-banner.listo { background: #e9f7ef; border-color: #a3cfbb; }
 .ia-banner.listo p { color: #0f5132; }
 .ia-banner.error { background: #fdecea; border-color: #f5c2c7; }

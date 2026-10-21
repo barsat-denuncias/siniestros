@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="grupo_barsat_logistico_logo.png">
     <!-- El ?v= evita que el navegador sirva una version cacheada.
          Al cambiar app.js o style.css, subir el numero. -->
-    <link rel="stylesheet" href="style.css?v=33">
+    <link rel="stylesheet" href="style.css?v=34">
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -270,11 +270,15 @@
                 <!-- Mientras la IA lee la denuncia en papel, la pagina baja sola
                      hasta aca para dibujar el croquis (ver LECTURA CON IA en app.js) -->
                 <div id="ia-banner-croquis" class="ia-banner hidden">
-                    <p id="ia-banner-texto"></p>
+                    <p id="ia-banner-texto" class="ia-banner-titulo"></p>
+                    <div id="ia-progreso" class="ia-progreso"><div id="ia-progreso-barra"></div></div>
+                    <p id="ia-banner-sub" class="ia-banner-sub"></p>
                     <button type="button" id="btn-ia-banner" onclick="cambiarPaso(1)">Dibujarlo después</button>
                 </div>
 
-                <label style="margin-top: 20px;">Croquis del siniestro*</label>
+                <!-- El croquis es opcional (desde el 21/10/2026). Si no se dibuja,
+                     el PDF lleva el cruce en blanco, como el formulario de papel. -->
+                <label style="margin-top: 20px;">Croquis del siniestro (opcional)</label>
                 <p style="font-size: 12px; color: #666; margin: 0 0 8px 0;">Dibujá cómo ocurrió el siniestro sobre el cruce. La N indica el Norte.</p>
                 <div class="croquis-wrapper">
                     <canvas id="croquis-canvas"></canvas>
@@ -283,7 +287,7 @@
                     <button type="button" class="btn-croquis" onclick="deshacerCroquis()">Deshacer</button>
                     <button type="button" class="btn-croquis btn-croquis-rojo" onclick="limpiarCroquis()">Limpiar</button>
                 </div>
-                <p id="croquis-error" class="error" style="display:none;">Es obligatorio dibujar el croquis del siniestro.</p>
+                <p id="croquis-error" class="error" style="display:none;"></p>
 
                 <button onclick="validarYPasar(4)">Siguiente</button>
                 <button class="btn-secundario" onclick="cambiarPaso(2)">Volver</button>
@@ -706,6 +710,6 @@
     </div>
     <!-- Aviso que se ve en cualquier paso (lo usa la lectura con IA) -->
     <div id="aviso-flotante" class="aviso-flotante hidden" onclick="this.classList.add('hidden')"></div>
-    <script src="app.js?v=33"></script>
+    <script src="app.js?v=34"></script>
 </body>
 </html>

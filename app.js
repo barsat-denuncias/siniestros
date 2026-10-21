@@ -1722,16 +1722,28 @@ function avisoFlotante(msg, tipo) {
     timerAvisoFlotante = setTimeout(() => el.classList.add('hidden'), 12000);
 }
 
-// Cartel arriba del croquis. Solo se ve si se esta en el paso 3: si el chofer
-// se fue a otro paso, al terminar le avisa el cartel flotante.
-function bannerIA(texto, textoBoton, tipo) {
+// Cartel arriba del croquis: titulo, barra de progreso (null = sin barra),
+// aclaracion y boton. Solo se ve si se esta en el paso 3: si el chofer se fue
+// a otro paso, al terminar le avisa el cartel flotante.
+function bannerIA(titulo, sub, textoBoton, tipo, progreso) {
     const caja = document.getElementById('ia-banner-croquis');
     if (!caja) return;
-    if (!texto) { caja.classList.add('hidden'); return; }
-    document.getElementById('ia-banner-texto').textContent = texto;
+    if (!titulo) { caja.classList.add('hidden'); return; }
+    document.getElementById('ia-banner-texto').textContent = titulo;
+    document.getElementById('ia-banner-sub').textContent = sub || '';
     document.getElementById('btn-ia-banner').innerText = textoBoton;
+    document.getElementById('ia-progreso').classList.toggle('hidden', progreso == null);
+    if (progreso != null) document.getElementById('ia-progreso-barra').style.width = progreso + '%';
     caja.className = 'ia-banner' + (tipo ? ' ' + tipo : '');
     caja.classList.toggle('hidden', pasoExterno !== 3);
+}
+
+// La IA no avisa cuanto le falta: la barra es una estimacion. Llega al 90% a
+// los 22 s (lo normal es 15-20) y despues avanza cada vez mas lento sin llegar
+// al 100, que se pone recien cuando termina de verdad.
+function progresoEstimadoIA(seg) {
+    if (seg <= 22) return seg / 22 * 90;
+    return 90 + 9 * (1 - Math.exp(-(seg - 22) / 15));
 }
 
 function actualizarBotonesIA() {
@@ -1885,14 +1897,14 @@ async function leerDenunciaConIA() {
     cambiarPaso(3);
     const inicio = Date.now();
     const contador = () => {
-        const s = Math.round((Date.now() - inicio) / 1000);
-        statusIA(`Leyendo la denuncia… ${s} s (suele tardar unos 20 segundos).`, 'buscando');
-        bannerIA(`La IA está completando la denuncia (${s} s, suele tardar unos 20). `
-            + 'Mientras tanto, dibujá el croquis acá abajo. Cuando termine te avisamos acá para que revises los datos.',
-            'Dibujarlo después');
+        const s = (Date.now() - inicio) / 1000;
+        statusIA('Se está completando la denuncia… (suele tardar unos 20 segundos)', 'buscando');
+        bannerIA('Se está completando la denuncia…',
+            'Mientras tanto podés dibujar el croquis acá abajo. Cuando termine te avisamos acá para que revises los datos.',
+            'Dibujarlo después', '', progresoEstimadoIA(s));
     };
     contador();
-    const timer = setInterval(contador, 1000);
+    const timer = setInterval(contador, 500);
     // El croquis esta abajo de daños y relato: se baja hasta el cartel
     const banner = document.getElementById('ia-banner-croquis');
     // (sin "smooth": en el celular el desplazamiento suave se cortaba a mitad de camino)
@@ -1917,19 +1929,20 @@ async function leerDenunciaConIA() {
         const r = await aplicarLecturaIA(data.datos || {});
         if (lecturaId !== iaLecturaId) return;
         const revisar = r.amarillos + r.rojos;
-        const msg = `Listo: la IA completó ${r.llenos} datos. `
-            + (revisar ? `Revisá ${r.amarillos} en amarillo y ${r.rojos} en rojo en los pasos 1 a 4.` : 'Revisalos igual contra el papel.')
+        const titulo = `Listo: se completaron ${r.llenos} datos.`;
+        const detalle = (revisar ? `Revisá ${r.amarillos} en amarillo y ${r.rojos} en rojo en los pasos 1 a 4.` : 'Revisalos igual contra el papel.')
             + (r.alertas.length ? ' Hay un aviso arriba de todo en el paso 1.' : '');
         clearInterval(timer);
-        statusIA(msg, 'ok');
-        bannerIA(msg + ' Cuando termines el croquis, tocá "Revisar los datos".', 'Revisar los datos', 'listo');
-        if (pasoExterno !== 3) avisoFlotante(msg, r.rojos || r.alertas.length ? 'error' : '');
+        statusIA(titulo + ' ' + detalle, 'ok');
+        bannerIA(titulo, detalle + ' Cuando termines el croquis (o si no lo vas a hacer), tocá "Revisar los datos".',
+            'Revisar los datos', 'listo', 100);
+        if (pasoExterno !== 3) avisoFlotante(titulo + ' ' + detalle, r.rojos || r.alertas.length ? 'error' : '');
     } catch (e) {
         if (lecturaId !== iaLecturaId) return;
         clearInterval(timer);
         const msg = textoError(e);
         statusIA(msg, 'aviso');
-        bannerIA(msg, 'Volver al paso 1', 'error');
+        bannerIA(msg, '', 'Volver al paso 1', 'error', null);
         if (pasoExterno !== 3) avisoFlotante(msg, 'error');
     } finally {
         clearInterval(timer);
@@ -3022,7 +3035,8 @@ function avisoCampo(el, texto) {
 function validarYPasar(proximoPaso) {
     if (!validarContenedor(document.getElementById(`step-${proximoPaso - 1}`))) return;
 
-    // Validacion extra al salir del paso 3: el croquis es obligatorio
+    // Al salir del paso 3: el croquis es OPCIONAL (desde el 21/10/2026), pero en
+    // una ampliacion hay que esperar a que baje el original, si no se pierde
     if (proximoPaso === 4) {
         const msg = document.getElementById('croquis-error');
         if (croquisPrevioPendiente) {
@@ -3032,15 +3046,6 @@ function validarYPasar(proximoPaso) {
                 msg.style.display = 'block';
                 msg.style.color = '#666';
                 msg.innerText = 'Esperá: todavía se está cargando el croquis de la denuncia original.';
-            }
-            irAlCampo(document.getElementById('croquis-canvas'));
-            return;
-        }
-        if (!croquisFueUsado) {
-            if (msg) {
-                msg.style.display = 'block';
-                msg.style.color = '#d9534f';
-                msg.innerText = 'Es obligatorio dibujar el croquis del siniestro.';
             }
             irAlCampo(document.getElementById('croquis-canvas'));
             return;
@@ -3234,9 +3239,10 @@ async function enviarSiniestro() {
 
         // ---- 3.b. Subir el croquis como PNG. El canvas ya tiene la rosa de los
         // vientos + lo dibujado (trazo nuevo o el croquis viejo de la ampliacion).
+        // Si no se dibujo nada (es opcional) no se sube: el PDF lleva el cruce en blanco.
         // Si falla la subida, dejamos croquis_url vacio y seguimos.
         let croquisUrl = '';
-        if (croquisCanvas) {
+        if (croquisCanvas && croquisFueUsado) {
             try {
                 const croquisBlob = await new Promise(r => croquisCanvas.toBlob(r, 'image/png'));
                 if (croquisBlob && croquisBlob.size > 0) {
