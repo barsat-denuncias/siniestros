@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="grupo_barsat_logistico_logo.png">
     <!-- El ?v= evita que el navegador sirva una version cacheada.
          Al cambiar app.js o style.css, subir el numero. -->
-    <link rel="stylesheet" href="style.css?v=34">
+    <link rel="stylesheet" href="style.css?v=35">
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -276,9 +276,10 @@
                     <button type="button" id="btn-ia-banner" onclick="cambiarPaso(1)">Dibujarlo después</button>
                 </div>
 
-                <!-- El croquis es opcional (desde el 21/10/2026). Si no se dibuja,
-                     el PDF lleva el cruce en blanco, como el formulario de papel. -->
-                <label style="margin-top: 20px;">Croquis del siniestro (opcional)</label>
+                <!-- Desde el 21/10/2026 el croquis NO traba el avance, pero a
+                     proposito no se dice: se pide como siempre (decision de
+                     Martin). Si no se dibuja, el PDF lleva el cruce en blanco. -->
+                <label style="margin-top: 20px;">Croquis del siniestro*</label>
                 <p style="font-size: 12px; color: #666; margin: 0 0 8px 0;">Dibujá cómo ocurrió el siniestro sobre el cruce. La N indica el Norte.</p>
                 <div class="croquis-wrapper">
                     <canvas id="croquis-canvas"></canvas>
@@ -710,6 +711,6 @@
     </div>
     <!-- Aviso que se ve en cualquier paso (lo usa la lectura con IA) -->
     <div id="aviso-flotante" class="aviso-flotante hidden" onclick="this.classList.add('hidden')"></div>
-    <script src="app.js?v=34"></script>
+    <script src="app.js?v=35"></script>
 </body>
 </html>

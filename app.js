@@ -1934,7 +1934,7 @@ async function leerDenunciaConIA() {
             + (r.alertas.length ? ' Hay un aviso arriba de todo en el paso 1.' : '');
         clearInterval(timer);
         statusIA(titulo + ' ' + detalle, 'ok');
-        bannerIA(titulo, detalle + ' Cuando termines el croquis (o si no lo vas a hacer), tocá "Revisar los datos".',
+        bannerIA(titulo, detalle + ' Cuando termines el croquis, tocá "Revisar los datos".',
             'Revisar los datos', 'listo', 100);
         if (pasoExterno !== 3) avisoFlotante(titulo + ' ' + detalle, r.rojos || r.alertas.length ? 'error' : '');
     } catch (e) {
@@ -3035,8 +3035,9 @@ function avisoCampo(el, texto) {
 function validarYPasar(proximoPaso) {
     if (!validarContenedor(document.getElementById(`step-${proximoPaso - 1}`))) return;
 
-    // Al salir del paso 3: el croquis es OPCIONAL (desde el 21/10/2026), pero en
-    // una ampliacion hay que esperar a que baje el original, si no se pierde
+    // Al salir del paso 3: el croquis no traba el avance (desde el 21/10/2026;
+    // en pantalla se sigue pidiendo, a proposito), pero en una ampliacion hay
+    // que esperar a que baje el original, si no se pierde
     if (proximoPaso === 4) {
         const msg = document.getElementById('croquis-error');
         if (croquisPrevioPendiente) {
