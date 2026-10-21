@@ -238,9 +238,11 @@ Deno.serve(async (req: Request) => {
         });
 
     } catch (e) {
-        // Si la IA esta saturada o caida, la lectura no cuenta: no es culpa de quien carga
+        // Si la IA esta saturada o caida, o la clave vencio, la lectura no
+        // cuenta: no es culpa de quien carga
         const status = e instanceof Anthropic.APIError ? e.status : undefined;
-        const culpaDeLaIA = status === undefined || status === 429 || status >= 500;
+        const problemaDeClave = status === 401 || status === 403;
+        const culpaDeLaIA = problemaDeClave || status === undefined || status === 429 || status >= 500;
         const motivo = e instanceof Error ? e.message : String(e);
         console.error("lectura fallo:", status, motivo);
         await sql`
@@ -249,9 +251,11 @@ Deno.serve(async (req: Request) => {
             where id = ${reserva.id}`.catch(() => {});
         return responder(origen, 502, {
             ok: false,
-            error: culpaDeLaIA
-                ? "La IA no respondió. Probá de nuevo en un minuto (no se descontó la lectura)."
-                : "La IA no pudo leer la denuncia. Probá con fotos más nítidas o completala a mano.",
+            error: problemaDeClave
+                ? "La lectura con IA no está disponible (problema con la clave). Completá la denuncia a mano y avisá a administración."
+                : culpaDeLaIA
+                    ? "La IA no respondió. Probá de nuevo en un minuto (no se descontó la lectura)."
+                    : "La IA no pudo leer la denuncia. Probá con fotos más nítidas o completala a mano.",
             restantes: MAX_LECTURAS_POR_DENUNCIA - reserva.usadas + (culpaDeLaIA ? 1 : 0),
         });
     }
